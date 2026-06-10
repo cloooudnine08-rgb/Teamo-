@@ -61,10 +61,7 @@ textarea{resize:vertical;}
 .lbox{background:var(--white);border-radius:20px;padding:36px 32px;width:100%;max-width:380px;box-shadow:var(--shm);text-align:center;}
 .lbox-logo{font-size:30px;font-weight:800;color:var(--blue);letter-spacing:-1px;margin-bottom:2px;}
 .lbox-sub{font-size:12px;color:var(--g400);margin-bottom:24px;}
-.kakao-section{background:#FFFDE7;border:1.5px solid #FDE68A;border-radius:var(--rs);padding:14px;margin-bottom:16px;}
-.kakao-key-wrap{position:relative;margin-top:8px;}
-.kakao-key-wrap input{padding-right:36px;font-size:12px;font-family:monospace;}
-.eye-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--g400);font-size:14px;width:auto;padding:0;}
+.kakao-btn-wrap{margin-bottom:12px;}
 .divider{display:flex;align-items:center;gap:8px;margin:14px 0;color:var(--g400);font-size:12px;}
 .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--g200);}
 .lbox input[type=text],.lbox input[type=password]{margin-bottom:10px;}
@@ -203,25 +200,15 @@ textarea{resize:vertical;}
       <div class="lbox-logo">TEAMO</div>
       <div class="lbox-sub">Stop Waiting. Start Moving.</div>
 
-      <!-- 카카오 섹션 -->
-      <div class="kakao-section">
-        <div style="font-size:12px;font-weight:700;color:#92400E;margin-bottom:6px;">🔑 카카오 로그인 설정</div>
-        <div style="font-size:11px;color:#78350F;margin-bottom:6px;">JavaScript 앱 키를 입력하면 카카오 로그인이 활성화됩니다.</div>
-        <div class="kakao-key-wrap">
-          <input type="password" id="kakao-key-inp" placeholder="카카오 JavaScript 앱 키 입력..." autocomplete="off" style="margin-bottom:0;">
-          <button class="eye-btn" onclick="toggleKeyVis()">👁</button>
-        </div>
-        <div style="font-size:10px;color:#92400E;margin-top:4px;">
-          <a href="https://developers.kakao.com" target="_blank" style="color:var(--blue);">발급받기 →</a> · 키는 브라우저에만 저장됩니다
-        </div>
-        <button class="btn btn-kakao btn-full" style="margin-top:10px;" onclick="doKakaoLogin()">🗝 카카오로 로그인</button>
-      </div>
+      <!-- 카카오 로그인 -->
+      <button class="btn btn-kakao btn-full" style="font-size:15px;height:48px;border-radius:12px;margin-bottom:12px;" onclick="doKakaoLogin()">
+        <img src="https://developers.kakao.com/tool/resource/static/img/button/login/full/ko/kakao_login_medium_narrow.png" style="height:36px;border-radius:8px;" alt="카카오 로그인">
+      </button>
 
       <div class="divider">또는</div>
 
       <!-- 일반 로그인 -->
-      <input type="text" id="li-name" placeholder="이름">
-      <input type="password" id="li-pw" placeholder="비밀번호" style="margin-bottom:12px;">
+      <input type="text" id="li-name" placeholder="이름" style="margin-bottom:10px;">
       <button class="btn btn-blue btn-full" onclick="doLogin()">로그인</button>
       <div style="margin-top:10px;font-size:12px;color:var(--g400);">
         <a style="color:var(--blue);cursor:pointer;text-decoration:underline;" onclick="demoLogin()">데모로 시작하기 →</a>
@@ -553,12 +540,12 @@ let S={user:null,projects:[],cur:null,
 // ── INIT ──
 async function init(){
   try{S.user=JSON.parse(localStorage.getItem('tm_user'));}catch{}
-  // kakao key
-  const savedKey=localStorage.getItem('tm_kakao_key')||'';
-  if(savedKey)$$('kakao-key-inp').value=savedKey;
   await loadProjects();
+  // 카카오 리다이렉트 처리 (code 파라미터 있으면)
+  const kakaoHandled = await handleKakaoRedirect();
+  if(kakaoHandled){ afterLogin(); return; }
   checkInvite();
-  if(!getInviteTok()&&S.user)afterLogin();
+  if(!getInviteTok()&&S.user) afterLogin();
 }
 async function loadProjects(){
   const keys=await dbList('proj:');const list=[];
@@ -647,34 +634,62 @@ async function joinProject(){
 }
 
 // ── KAKAO LOGIN ──
-function toggleKeyVis(){
-  const inp=$$('kakao-key-inp');
-  inp.type=inp.type==='password'?'text':'password';
-}
+const KAKAO_APP_KEY = '7e6db2b5b8aa6a9beb6303db04048fe3';
+const KAKAO_REDIRECT_URI = 'https://cloooudnine08-rgb.github.io/Teamo-/';
+
 function doKakaoLogin(){
-  const key=$$('kakao-key-inp').value.trim();
-  if(!key){toast('카카오 JavaScript 앱 키를 먼저 입력해주세요');return;}
-  localStorage.setItem('tm_kakao_key',key);
+  // 카카오 인증 페이지로 이동
+  const url = 'https://kauth.kakao.com/oauth/authorize'
+    + '?client_id=' + KAKAO_APP_KEY
+    + '&redirect_uri=' + encodeURIComponent(KAKAO_REDIRECT_URI)
+    + '&response_type=code';
+  window.location.href = url;
+}
+
+// 카카오 리다이렉트 후 code 처리
+async function handleKakaoRedirect(){
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if(!code) return false;
+
+  // URL 정리 (code 파라미터 제거)
+  history.replaceState({}, '', location.pathname + location.hash);
+
   try{
-    if(!Kakao.isInitialized())Kakao.init(key);
-    Kakao.Auth.login({
-      scope:'profile_nickname,profile_image',
-      redirectUri:'https://cloooudnine08-rgb.github.io/Teamo-/',
-      success(auth){
-        Kakao.API.request({
-          url:'/v2/user/me',
-          success(res){
-            const profile=res.kakao_account?.profile;
-            S.user={name:profile?.nickname||'카카오사용자',img:profile?.profile_image_url||''};
-            localStorage.setItem('tm_user',JSON.stringify(S.user));
-            afterLogin();
-          },
-          fail(e){toast('프로필 불러오기 실패: '+e.message);}
-        });
-      },
-      fail(e){toast('카카오 로그인 실패: '+(e.error_description||'앱 키를 확인해주세요'));}
+    // 카카오 토큰 교환
+    const tokenRes = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: KAKAO_APP_KEY,
+        redirect_uri: KAKAO_REDIRECT_URI,
+        code: code,
+      })
     });
-  }catch(e){toast('카카오 SDK 오류: '+e.message);}
+    if(!tokenRes.ok) throw new Error('토큰 교환 실패');
+    const tokenData = await tokenRes.json();
+    const accessToken = tokenData.access_token;
+
+    // 사용자 정보 요청
+    const userRes = await fetch('https://kapi.kakao.com/v2/user/me', {
+      headers: { Authorization: 'Bearer ' + accessToken }
+    });
+    if(!userRes.ok) throw new Error('사용자 정보 요청 실패');
+    const userData = await userRes.json();
+    const profile = userData.kakao_account?.profile;
+
+    S.user = {
+      name: profile?.nickname || '카카오사용자',
+      img: profile?.profile_image_url || '',
+      phone: userData.kakao_account?.phone_number || ''
+    };
+    localStorage.setItem('tm_user', JSON.stringify(S.user));
+    return true;
+  } catch(e){
+    toast('카카오 로그인 오류: ' + e.message);
+    return false;
+  }
 }
 
 // ── GENERAL LOGIN ──
@@ -1030,20 +1045,36 @@ function nudgeMember(nm,item){
 }
 function nudgeAll(){toast('전체 팀원에게 재촉 알림을 보냈습니다!');}
 
-// ── AI ──
+// ── AI (Artifact 내장 API) ──
 const AI_SYS={
-  schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고, 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
+  schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
   vote:p=>'당신은 투표 분석 AI입니다. 투표: '+JSON.stringify((p.votes||[]).map(v=>v.label+' '+v.count+'표 투표자:('+( v.voters?.join(',')||'없음')+')'))+'. 한국어로 간결하게 답하세요.',
   place:p=>'당신은 회의 장소 추천 AI입니다. 팀원 '+p.members+'명. 한국어로 간결하게 답하세요.',
 };
 async function callClaude(system,messages,onChunk){
-  const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,stream:true,system,messages})});
-  if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'API error');}
-  const reader=res.body.getReader();const dec=new TextDecoder();let result='';
-  while(true){const{done,value}=await reader.read();if(done)break;
+  const response=await fetch('https://api.anthropic.com/v1/messages',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:1000,
+      stream:true,
+      system,
+      messages
+    })
+  });
+  if(!response.ok){const e=await response.json();throw new Error(e.error?.message||'API error');}
+  const reader=response.body.getReader();const dec=new TextDecoder();let result='';
+  while(true){
+    const{done,value}=await reader.read();if(done)break;
     const lines=dec.decode(value).split('\n').filter(l=>l.startsWith('data: '));
-    for(const line of lines){try{const d=JSON.parse(line.slice(6));if(d.type==='content_block_delta'&&d.delta?.text){result+=d.delta.text;onChunk(result);}}catch{}}
+    for(const line of lines){
+      try{
+        const d=JSON.parse(line.slice(6));
+        if(d.type==='content_block_delta'&&d.delta?.text){result+=d.delta.text;onChunk(result);}
+      }catch{}
+    }
   }
   return result;
 }
