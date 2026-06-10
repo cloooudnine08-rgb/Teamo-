@@ -523,7 +523,7 @@ textarea{resize:vertical;}
 <script>
 // ── GEMINI API KEY ──
 const GEMINI_KEY = 'AIzaSyAUcNvhYhoUag5sBJbzCnVP79e7-TQpoLA';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent?alt=sse&key=' + GEMINI_KEY;
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=' + GEMINI_KEY;
 
 // ── STORAGE ──
 async function dbGet(k){try{const r=await window.storage.get(k,true);return r?JSON.parse(r.value):null;}catch{return null;}}
@@ -1040,15 +1040,14 @@ const AI_SYS={
 };
 
 async function callGemini(system, messages, onChunk) {
-  // Claude 형식 → Gemini 형식 변환
   const contents = messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
+    role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }]
   }));
 
   const response = await fetch(GEMINI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       system_instruction: { parts: [{ text: system }] },
       contents,
@@ -1058,25 +1057,12 @@ async function callGemini(system, messages, onChunk) {
 
   if (!response.ok) {
     const e = await response.json();
-    throw new Error(e.error?.message || 'Gemini API 오류');
+    throw new Error(e.error?.message || "Gemini API 오류");
   }
 
-  const reader = response.body.getReader();
-  const dec = new TextDecoder();
-  let result = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const lines = dec.decode(value).split('\n').filter(l => l.startsWith('data: '));
-    for (const line of lines) {
-      try {
-        const d = JSON.parse(line.slice(6));
-        const text = d.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) { result += text; onChunk(result); }
-      } catch {}
-    }
-  }
+  const data = await response.json();
+  const result = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  onChunk(result);
   return result;
 }
 
