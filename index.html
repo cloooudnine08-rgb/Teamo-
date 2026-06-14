@@ -1062,7 +1062,8 @@ function searchPlaces(){
   $$('place-results').innerHTML=(res.length?res:PLACES).map(p=>'<div class="place-card"><div><div style="font-size:13px;font-weight:600;margin-bottom:4px;">'+p.name+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;"><span class="badge b-blue">도보 '+p.walk+'분</span>'+(p.plug?'<span class="badge b-green">콘센트 ✓</span>':'')+'<span class="badge b-purple">'+p.noise+'</span></div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:var(--blue);">'+p.score+'%</div><div style="font-size:10px;color:var(--g400);">회의 적합도</div></div></div>').join('');
 }
 
-// ── AI ──
+// ── AI (Gemini) ──
+const GEMINI_API_KEY = 'AQ.Ab8RN6KtliXgr8j5M3gRhqRTVun4a7nV4IAjjJDCbXRNt_o69A';
 const AI_SYS={
   schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
@@ -1070,11 +1071,21 @@ const AI_SYS={
   place:p=>'당신은 회의 장소 추천 AI입니다. 팀원 '+p.members+'명. 한국어로 간결하게 답하세요.',
 };
 async function callClaude(system,messages,onChunk){
-  const response=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,stream:true,system,messages})});
-  if(!response.ok){const e=await response.json();throw new Error(e.error?.message||'API error');}
-  const reader=response.body.getReader();const dec=new TextDecoder();let result='';
-  while(true){const{done,value}=await reader.read();if(done)break;const lines=dec.decode(value).split('\n').filter(l=>l.startsWith('data: '));for(const line of lines){try{const d=JSON.parse(line.slice(6));if(d.type==='content_block_delta'&&d.delta?.text){result+=d.delta.text;onChunk(result);}}catch{}}}
-  return result;
+  const GEMINI_URL='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+GEMINI_API_KEY;
+  // 메시지 변환: system + messages → Gemini 형식
+  const contents=messages.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
+  // system을 첫 user 메시지 앞에 붙이기
+  if(contents.length>0&&contents[0].role==='user'){
+    contents[0].parts[0].text=system+'
+
+'+contents[0].parts[0].text;
+  }
+  const res=await fetch(GEMINI_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contents,generationConfig:{maxOutputTokens:1000}})});
+  if(!res.ok){const e=await res.json();throw new Error(e.error?.message||'Gemini API error');}
+  const data=await res.json();
+  const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'';
+  onChunk(text);
+  return text;
 }
 async function sendAI(tab,preset){
   if(S.aiLd[tab])return;const inp=$$('ai-inp-'+tab);const msg=preset||inp.value.trim();if(!msg)return;inp.value='';
