@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TEAMO — 팀을 움직이는 가장 쉬운 방법</title>
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js" crossorigin="anonymous"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <style>
 :root{
   --blue:#2563EB;--blue-d:#1D4ED8;--blue-l:#EFF6FF;--blue-m:#BFDBFE;
@@ -591,10 +594,38 @@ textarea{resize:vertical;}
 
 
 <script>
-// ── STORAGE (localStorage) ──
-async function dbGet(k){try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch{return null;}}
-async function dbSet(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
-async function dbList(prefix){try{return Object.keys(localStorage).filter(k=>k.startsWith(prefix));}catch{return[];}}
+// ── FIREBASE INIT ──
+const firebaseConfig = {
+  apiKey: "AIzaSyCv9PxrLNHpn9He1bMndDAVZIHfRi3yXoU",
+  authDomain: "teamo-74ea2.firebaseapp.com",
+  projectId: "teamo-74ea2",
+  storageBucket: "teamo-74ea2.firebasestorage.app",
+  messagingSenderId: "417928938259",
+  appId: "1:417928938259:web:ff277560c4a20be62190e6"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+// ── STORAGE (Firestore) ──
+function encodeKey(k){return k.replace(/[^a-zA-Z0-9]/g,function(c){return '_'+c.charCodeAt(0)+'_';});}
+async function dbGet(k){
+  try{
+    const doc=await db.collection('teamo_data').doc(encodeKey(k)).get();
+    return doc.exists?doc.data().value:null;
+  }catch(e){console.error('dbGet',e);return null;}
+}
+async function dbSet(k,v){
+  try{
+    await db.collection('teamo_data').doc(encodeKey(k)).set({value:v,key:k,updatedAt:new Date()});
+  }catch(e){console.error('dbSet',e);}
+}
+async function dbList(prefix){
+  try{
+    const snap=await db.collection('teamo_data').where('key','>=',prefix).where('key','<',prefix+'~').get();
+    return snap.docs.map(d=>d.data().key);
+  }catch(e){console.error('dbList',e);return[];}
+}
 
 // ── STATE ──
 let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new Date(),voteOpts:[],voteChecked:[],aiLd:{},aiHist:{schedule:[],role:[],vote:[],place:[]}};
