@@ -591,6 +591,7 @@ textarea{resize:vertical;}
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
 // ── FIREBASE INIT ──
 const firebaseConfig = {
@@ -603,25 +604,31 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 
 // ── STORAGE (Firestore) ──
 async function dbGet(k){
   try{
-    const doc=await db.collection('teamo').doc(k.replace(/\//g,'_')).get();
+    const doc=await db.collection('teamo_data').doc(encodeKey(k)).get();
     return doc.exists?doc.data().value:null;
   }catch{return null;}
 }
 async function dbSet(k,v){
   try{
-    await db.collection('teamo').doc(k.replace(/\//g,'_')).set({value:v,updatedAt:new Date()});
+    await db.collection('teamo_data').doc(encodeKey(k)).set({value:v,updatedAt:new Date()});
   }catch(e){console.error('dbSet error',e);}
 }
 async function dbList(prefix){
   try{
-    const snap=await db.collection('teamo').where(firebase.firestore.FieldPath.documentId(),'>=',prefix.replace(/\//g,'_')).where(firebase.firestore.FieldPath.documentId(),'<',prefix.replace(/\//g,'_')+'~').get();
-    return snap.docs.map(d=>d.id.replace(/_/g,'/'));
+    const ep=encodeKey(prefix);
+    const snap=await db.collection('teamo_data')
+      .where(firebase.firestore.FieldPath.documentId(),'>=',ep)
+      .where(firebase.firestore.FieldPath.documentId(),'<',ep+'~').get();
+    return snap.docs.map(d=>decodeKey(d.id));
   }catch{return[];}
 }
+function encodeKey(k){return k.replace(/\//g,'__').replace(/:/g,'--');}
+function decodeKey(k){return k.replace(/__/g,'/').replace(/--/g,':');}
 
 // ── STATE ──
 let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new Date(),voteOpts:[],voteChecked:[],aiLd:{},aiHist:{schedule:[],role:[],vote:[],place:[]}};
