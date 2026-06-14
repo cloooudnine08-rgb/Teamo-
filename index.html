@@ -637,8 +637,7 @@ let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new D
 async function init(){
   try{S.user=JSON.parse(localStorage.getItem('tm_user'));}catch{}
   await loadProjects();
-  const kakaoHandled=await handleKakaoRedirect();
-  if(kakaoHandled){afterLogin();return;}
+  await handleKakaoRedirect();
   checkInvite();
   if(!getInviteTok()&&S.user)afterLogin();
 }
@@ -1114,6 +1113,10 @@ async function loadNudgeAI(){
   try{await callClaude('팀 병목 분석 AI. 한국어로 간결하게.',[{role:'user',content:prompt}],text=>{el.textContent=text;});}catch{el.textContent='분석 실패.';}
 }
 document.querySelectorAll('.mbg').forEach(m=>m.addEventListener('click',e=>{if(e.target===m)m.classList.remove('on');}));
+// 카카오 SDK 초기화
+if(typeof Kakao !== 'undefined' && !Kakao.isInitialized()){
+  Kakao.init('8c2c548e472efa70ae216ea631e0c8b8');
+}
 init();
 </script>
 </body>
