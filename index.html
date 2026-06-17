@@ -1058,9 +1058,9 @@ function searchPlaces(){
   $$('place-results').innerHTML=(res.length?res:PLACES).map(p=>'<div class="place-card"><div><div style="font-size:13px;font-weight:600;margin-bottom:4px;">'+p.name+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;"><span class="badge b-blue">도보 '+p.walk+'분</span>'+(p.plug?'<span class="badge b-green">콘센트 ✓</span>':'')+'<span class="badge b-purple">'+p.noise+'</span></div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:var(--blue);">'+p.score+'%</div><div style="font-size:10px;color:var(--g400);">회의 적합도</div></div></div>').join('');
 }
 
-// ── AI (Hugging Face) ──
-const HF_TOKEN = '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';
-const HF_MODEL = 'meta-llama/Llama-3.2-3B-Instruct';
+// ── AI (OpenRouter) ──
+const OPENROUTER_KEY = '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';
+const OR_MODEL = 'meta-llama/llama-3.2-3b-instruct:free';
 const AI_SYS={
   schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
@@ -1068,14 +1068,18 @@ const AI_SYS={
   place:p=>'당신은 회의 장소 추천 AI입니다. 팀원 '+p.members+'명. 한국어로 간결하게 답하세요.',
 };
 async function callClaude(system,messages,onChunk){
-  const HF_URL='https://api-inference.huggingface.co/models/'+HF_MODEL+'/v1/chat/completions';
   const chatMessages=[{role:'system',content:system},...messages.map(m=>({role:m.role,content:m.content}))];
-  const res=await fetch(HF_URL,{
+  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
     method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+HF_TOKEN},
-    body:JSON.stringify({model:HF_MODEL,messages:chatMessages,max_tokens:600})
+    headers:{
+      'Content-Type':'application/json',
+      'Authorization':'Bearer '+OPENROUTER_KEY,
+      'HTTP-Referer':'https://cloooudnine08-rgb.github.io/Teamo-/',
+      'X-Title':'TEAMO'
+    },
+    body:JSON.stringify({model:OR_MODEL,messages:chatMessages,max_tokens:600})
   });
-  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error||'Hugging Face API error ('+res.status+')');}
+  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error?.message||'OpenRouter API error ('+res.status+')');}
   const data=await res.json();
   const text=data.choices?.[0]?.message?.content||'';
   onChunk(text);
