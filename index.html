@@ -603,24 +603,45 @@ const firebaseConfig = {
   messagingSenderId: "417928938259",
   appId: "1:417928938259:web:ff277560c4a20be62190e6"
 };
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
+let db, auth, firebaseReady=false;
+if(typeof firebase !== 'undefined'){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db = firebase.firestore();
+    auth = firebase.auth();
+    firebaseReady=true;
+  }catch(e){
+    console.error('Firebase init failed',e);
+  }
+}else{
+  console.error('Firebase SDK failed to load');
+}
 
 // ── STORAGE (Firestore) ──
 function encodeKey(k){return k.replace(/[^a-zA-Z0-9]/g,function(c){return '_'+c.charCodeAt(0)+'_';});}
 async function dbGet(k){
+  if(!db)return null;
   try{
     const doc=await db.collection('teamo_data').doc(encodeKey(k)).get();
     return doc.exists?doc.data().value:null;
   }catch(e){console.error('dbGet',e);return null;}
 }
 async function dbSet(k,v){
+  if(!db){
+    toast('⚠️ 저장 실패: 서버 연결이 끊겼습니다. 새로고침 해주세요.',4000);
+    return false;
+  }
   try{
     await db.collection('teamo_data').doc(encodeKey(k)).set({value:v,key:k,updatedAt:new Date()});
-  }catch(e){console.error('dbSet',e);}
+    return true;
+  }catch(e){
+    console.error('dbSet',e);
+    toast('⚠️ 저장 실패: '+e.message,4000);
+    return false;
+  }
 }
 async function dbList(prefix){
+  if(!db)return[];
   try{
     const snap=await db.collection('teamo_data').where('key','>=',prefix).where('key','<',prefix+'~').get();
     return snap.docs.map(d=>d.data().key);
@@ -633,10 +654,28 @@ let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new D
 // ── INIT ──
 async function init(){
   try{S.user=JSON.parse(localStorage.getItem('tm_user'));}catch{}
+  // Firebase 연결 실제 테스트
+  if(firebaseReady){
+    try{
+      await db.collection('teamo_data').limit(1).get();
+    }catch(e){
+      firebaseReady=false;
+      console.error('Firebase connection test failed',e);
+    }
+  }
+  if(!firebaseReady){
+    showConnectionWarning();
+  }
   await loadProjects();
   await handleKakaoRedirect();
   checkInvite();
   if(!getInviteTok()&&S.user)afterLogin();
+}
+function showConnectionWarning(){
+  const banner=document.createElement('div');
+  banner.style.cssText='position:fixed;top:0;left:0;right:0;background:#DC2626;color:#fff;text-align:center;padding:8px 12px;font-size:13px;font-weight:600;z-index:9999;';
+  banner.textContent='⚠️ 서버 연결 실패 — 변경사항이 저장되지 않을 수 있습니다. 새로고침 해주세요.';
+  document.body.prepend(banner);
 }
 async function loadProjects(){
   const keys=await dbList('proj:');const list=[];
@@ -1058,9 +1097,7 @@ function searchPlaces(){
   $$('place-results').innerHTML=(res.length?res:PLACES).map(p=>'<div class="place-card"><div><div style="font-size:13px;font-weight:600;margin-bottom:4px;">'+p.name+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;"><span class="badge b-blue">도보 '+p.walk+'분</span>'+(p.plug?'<span class="badge b-green">콘센트 ✓</span>':'')+'<span class="badge b-purple">'+p.noise+'</span></div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:var(--blue);">'+p.score+'%</div><div style="font-size:10px;color:var(--g400);">회의 적합도</div></div></div>').join('');
 }
 
-// ── AI (OpenRouter) ──
-const OPENROUTER_KEY = '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';
-const OR_MODEL = 'google/gemma-2-9b-it:free';
+// ── AI (Pollinations - 무료, 키 불필요) ──
 const AI_SYS={
   schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
@@ -1069,19 +1106,14 @@ const AI_SYS={
 };
 async function callClaude(system,messages,onChunk){
   const chatMessages=[{role:'system',content:system},...messages.map(m=>({role:m.role,content:m.content}))];
-  const res=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+  const res=await fetch('https://text.pollinations.ai/openai',{
     method:'POST',
-    headers:{
-      'Content-Type':'application/json',
-      'Authorization':'Bearer '+OPENROUTER_KEY,
-      'HTTP-Referer':'https://cloooudnine08-rgb.github.io/Teamo-/',
-      'X-Title':'TEAMO'
-    },
-    body:JSON.stringify({model:OR_MODEL,messages:chatMessages,max_tokens:600})
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:'openai',messages:chatMessages,max_tokens:600})
   });
-  if(!res.ok){const e=await res.json().catch(()=>({}));throw new Error(e.error?.message||'OpenRouter API error ('+res.status+')');}
+  if(!res.ok){throw new Error('Pollinations API error ('+res.status+')');}
   const data=await res.json();
-  const text=data.choices?.[0]?.message?.content||'';
+  const text=data.choices?.[0]?.message?.content||(typeof data==='string'?data:'');
   onChunk(text);
   return text;
 }
