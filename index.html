@@ -1060,7 +1060,7 @@ function searchPlaces(){
 
 // ── AI (OpenRouter) ──
 const OPENROUTER_KEY = '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';
-const OR_MODEL = 'meta-llama/llama-3.2-3b-instruct:free';
+const OR_MODEL = 'google/gemma-2-9b-it:free';
 const AI_SYS={
   schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
