@@ -30,6 +30,19 @@ body{font-family:'Apple SD Gothic Neo',-apple-system,sans-serif;background:var(-
 .nav-nm{font-size:13px;font-weight:500;color:var(--g600);}
 .nav-out{background:none;border:none;font-size:12px;color:var(--g400);cursor:pointer;padding:4px 8px;border-radius:6px;}
 .nav-out:hover{background:var(--g100);}
+.notif-bell{position:relative;background:none;border:none;cursor:pointer;font-size:18px;padding:4px;border-radius:6px;}
+.notif-bell:hover{background:var(--g100);}
+.notif-dot{position:absolute;top:1px;right:1px;width:8px;height:8px;background:var(--red);border-radius:50%;border:1.5px solid #fff;display:none;}
+.notif-dot.on{display:block;}
+.notif-panel{display:none;position:absolute;top:50px;right:20px;width:320px;max-height:420px;overflow-y:auto;background:#fff;border:1px solid var(--g200);border-radius:var(--r);box-shadow:var(--shm);z-index:100;}
+.notif-panel.on{display:block;}
+.notif-panel-hd{padding:12px 14px;border-bottom:1px solid var(--g100);font-size:13px;font-weight:700;display:flex;justify-content:space-between;align-items:center;}
+.notif-item{padding:10px 14px;border-bottom:1px solid var(--g100);font-size:12px;}
+.notif-item:last-child{border-bottom:none;}
+.notif-item.unread{background:var(--red-l);}
+.notif-item-title{font-weight:600;color:var(--g700);margin-bottom:2px;}
+.notif-item-time{font-size:10px;color:var(--g400);margin-top:3px;}
+.notif-empty{padding:30px 14px;text-align:center;font-size:12px;color:var(--g400);}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:5px;border:none;border-radius:var(--rs);padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;white-space:nowrap;}
 .btn:disabled{opacity:.4;cursor:not-allowed;}
 .btn-blue{background:var(--blue);color:#fff;}.btn-blue:hover:not(:disabled){background:var(--blue-d);}
@@ -84,6 +97,8 @@ textarea{resize:vertical;}
 .proj-invite{margin-top:10px;padding-top:10px;border-top:1px solid var(--g100);display:flex;align-items:center;gap:7px;}
 .invite-url-box{flex:1;font-size:11px;color:var(--blue);background:var(--g50);border:1px solid var(--g200);border-radius:6px;padding:5px 9px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:text;user-select:all;}
 .copy-btn{background:var(--blue);color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.del-proj-btn{background:none;border:1px solid var(--g200);color:var(--g400);border-radius:6px;padding:4px 8px;font-size:13px;cursor:pointer;}
+.del-proj-btn:hover{background:#FEF2F2;border-color:#FCA5A5;color:var(--red);}
 .empty-st{text-align:center;padding:48px 20px;background:var(--white);border-radius:var(--r);border:1px solid var(--g200);}
 
 /* INVITE */
@@ -257,11 +272,16 @@ textarea{resize:vertical;}
   <nav class="nav">
     <div class="nav-logo" onclick="goHome()">TEAMO <span class="nav-logo-badge">🔔 재촉 플랫폼</span></div>
     <div class="nav-r">
+      <button class="notif-bell" onclick="toggleNotifPanel(event)">🔔<span class="notif-dot" id="notif-dot"></span></button>
       <div class="nav-av" id="nav-av">?</div>
       <span class="nav-nm" id="nav-nm">-</span>
       <button class="nav-out" onclick="doLogout()">로그아웃</button>
     </div>
   </nav>
+  <div class="notif-panel" id="notif-panel">
+    <div class="notif-panel-hd"><span>🔔 알림</span><button class="btn btn-ghost btn-xs" onclick="markAllNotifRead()">모두 읽음</button></div>
+    <div id="notif-list"><div class="notif-empty">알림이 없습니다.</div></div>
+  </div>
   <div class="wrap">
     <!-- 재촉 배너 (미응답자 있을때만 표시) -->
     <div class="home-nudge-banner" id="home-nudge-banner" style="display:none;">
@@ -308,11 +328,16 @@ textarea{resize:vertical;}
   <nav class="nav">
     <div class="nav-logo" onclick="goHome()">TEAMO <span class="nav-logo-badge">🔔 재촉 플랫폼</span></div>
     <div class="nav-r">
+      <button class="notif-bell" onclick="toggleNotifPanel(event)">🔔<span class="notif-dot" id="notif-dot2"></span></button>
       <div class="nav-av" id="nav-av2">?</div>
       <span class="nav-nm" id="nav-nm2">-</span>
       <button class="nav-out" onclick="goHome()">← 홈</button>
     </div>
   </nav>
+  <div class="notif-panel" id="notif-panel2">
+    <div class="notif-panel-hd"><span>🔔 알림</span><button class="btn btn-ghost btn-xs" onclick="markAllNotifRead()">모두 읽음</button></div>
+    <div id="notif-list2"><div class="notif-empty">알림이 없습니다.</div></div>
+  </div>
   <div class="wrap">
     <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
       <div><h1 style="font-size:21px;font-weight:700;" id="d-name">-</h1><div style="font-size:12px;color:var(--g400);margin-top:2px;" id="d-meta">-</div></div>
@@ -784,6 +809,7 @@ function afterLogin(){
   ['nav-nm','nav-nm2'].forEach(id=>$$(id).textContent=nm);
   $$('greet-h2').textContent='안녕하세요, '+nm+'님 👋';
   showPage('pg-home');renderProjects();
+  refreshNotifBadge();
 }
 function doLogout(){S.user=null;localStorage.removeItem('tm_user');try{if(Kakao.isInitialized()&&Kakao.Auth.getAccessToken())Kakao.Auth.logout(()=>{});}catch{}showPage('pg-login');}
 function goHome(){showPage('pg-home');renderProjects();}
@@ -816,7 +842,7 @@ function renderProjects(){
       +'</div>'
       +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;"><div class="prog" style="width:140px;"><div class="prog-f" style="width:'+pct+'%"></div></div><span style="font-size:12px;color:var(--g400);">'+pct+'%</span></div>'
       +'<div style="display:flex;gap:5px;flex-wrap:wrap;"><span class="badge b-blue">팀원 '+p.members+'명</span>'+(p.deadline?'<span class="badge b-green" style="background:#D1FAE5;color:#065F46;">마감 '+p.deadline+'</span>':'')+(p.memberList?.length?'<span class="badge b-purple">참여 '+p.memberList.length+'명</span>':'')+'</div>'
-      +'</div><div style="color:var(--g400);font-size:18px;margin-left:8px;">&#x203a;</div></div>'
+      +'</div><div style="display:flex;align-items:center;gap:6px;margin-left:8px;"><button class="del-proj-btn" onclick="event.stopPropagation();deleteProject('+p.id+',\''+p.name.replace(/'/g,"\\'")+'\')" title="삭제">🗑</button><div style="color:var(--g400);font-size:18px;">&#x203a;</div></div></div>'
       +'<div class="proj-invite" onclick="event.stopPropagation()">'
       +'<div class="invite-url-box" id="inv-url-'+p.id+'">'+url+'</div>'
       +'<button class="copy-btn" onclick="copyUrl(\'inv-url-'+p.id+'\')">복사</button>'
@@ -824,6 +850,15 @@ function renderProjects(){
   }).join('');
 }
 function copyUrl(elId){const txt=$$(elId)?.textContent||'';navigator.clipboard.writeText(txt).then(()=>toast('초대 링크 복사!')).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);toast('초대 링크 복사!');});}
+async function deleteProject(id,name){
+  if(!confirm('"'+name+'" 프로젝트를 삭제하시겠습니까?\n삭제하면 복구할 수 없습니다.'))return;
+  try{
+    if(db){await db.collection('teamo_data').doc(encodeKey('proj:'+id)).delete();}
+    S.projects=S.projects.filter(p=>p.id!==id);
+    renderProjects();
+    toast('프로젝트가 삭제되었습니다.');
+  }catch(e){toast('삭제 실패: '+e.message);}
+}
 
 async function createProject(){
   const nm=$$('np-nm').value.trim();if(!nm){toast('프로젝트 이름을 입력해주세요');return;}
@@ -848,6 +883,7 @@ function openDetail(id){
   // 재촉 탭이 기본
   switchTopTab('nudge',$$('tt-nudge'));switchTab('schedule',document.querySelector('.tab-btn'));
   showPage('pg-detail');renderNudgeDash();loadAIPanel();loadNudgeAI();
+  refreshNotifBadge();
 }
 function updateProg(){const p=cp();if(!p)return;const pct=calcProg(p);$$('d-pct').textContent=pct+'%';$$('d-bar').style.width=pct+'%';}
 
@@ -935,16 +971,91 @@ function renderNudgeDash(){
   }).join('');
 }
 
-function nudgeMember(nm,item){
+// ── 알림 시스템 ──
+async function sendNotif(toName,fromName,msg,projName){
+  if(!db){toast('⚠️ 서버 연결 안 됨: 알림 전송 실패');return;}
+  try{
+    await db.collection('notifications').add({
+      to:toName, from:fromName, message:msg, project:projName,
+      read:false, createdAt:new Date()
+    });
+  }catch(e){console.error('sendNotif',e);}
+}
+async function loadMyNotifs(){
+  if(!db)return[];
+  const myName=getMyName();
+  try{
+    const snap=await db.collection('notifications').where('to','==',myName).orderBy('createdAt','desc').limit(30).get();
+    return snap.docs.map(d=>({id:d.id,...d.data()}));
+  }catch(e){console.error('loadMyNotifs',e);return[];}
+}
+async function refreshNotifBadge(){
+  const notifs=await loadMyNotifs();
+  const hasUnread=notifs.some(n=>!n.read);
+  ['notif-dot','notif-dot2'].forEach(id=>{const el=$$(id);if(el)el.classList.toggle('on',hasUnread);});
+  S.notifs=notifs;
+}
+function renderNotifPanel(listId){
+  const notifs=S.notifs||[];
+  const el=$$(listId);if(!el)return;
+  if(!notifs.length){el.innerHTML='<div class="notif-empty">알림이 없습니다.</div>';return;}
+  el.innerHTML=notifs.map(n=>{
+    const time=n.createdAt?.toDate?n.createdAt.toDate():new Date();
+    const timeStr=time.getMonth()+1+'/'+time.getDate()+' '+String(time.getHours()).padStart(2,'0')+':'+String(time.getMinutes()).padStart(2,'0');
+    return '<div class="notif-item '+(n.read?'':'unread')+'"><div class="notif-item-title">🔔 '+n.from+'님의 재촉</div><div>'+n.message+'</div><div class="notif-item-time">'+(n.project?n.project+' · ':'')+timeStr+'</div></div>';
+  }).join('');
+}
+async function toggleNotifPanel(e){
+  e.stopPropagation();
+  await refreshNotifBadge();
+  ['notif-panel','notif-panel2'].forEach(id=>{
+    const el=$$(id);if(!el)return;
+    el.classList.toggle('on');
+    if(el.classList.contains('on')){
+      renderNotifPanel(id==='notif-panel'?'notif-list':'notif-list2');
+    }
+  });
+}
+document.addEventListener('click',(e)=>{
+  if(!e.target.closest('.notif-panel')&&!e.target.closest('.notif-bell')){
+    ['notif-panel','notif-panel2'].forEach(id=>$$(id)?.classList.remove('on'));
+  }
+});
+async function markAllNotifRead(){
+  if(!db)return;
+  const myName=getMyName();
+  try{
+    const snap=await db.collection('notifications').where('to','==',myName).where('read','==',false).get();
+    const batch=db.batch();
+    snap.docs.forEach(d=>batch.update(d.ref,{read:true}));
+    await batch.commit();
+    await refreshNotifBadge();
+    renderNotifPanel('notif-list');renderNotifPanel('notif-list2');
+    toast('모든 알림을 읽음으로 표시했습니다.');
+  }catch(e){console.error('markAllNotifRead',e);}
+}
+
+async function nudgeMember(nm,item){
+  const p=cp();const myName=getMyName();
+  const msg=item?'['+item+'] 항목을 완료해주세요!':'프로젝트 항목을 완료해주세요!';
+  await sendNotif(nm,myName,msg,p?.name);
   if(item)toast('🔔 '+nm+'님에게 ['+item+'] 재촉 알림을 보냈습니다!');
   else toast('🔔 '+nm+'님에게 재촉 알림을 보냈습니다!');
 }
-function nudgeAll(){toast('🔔 전체 팀원에게 재촉 알림을 보냈습니다!');}
-function nudgePending(){
+async function nudgeAll(){
   const p=cp();if(!p)return;
-  const members=getMembers(p);
-  const cnt=members.filter(m=>getMemberPending(m,p).length>0).length;
-  if(cnt>0)toast('🔔 미응답자 '+cnt+'명에게 재촉 알림을 보냈습니다!');
+  const myName=getMyName();
+  const members=getMembers(p).filter(m=>m!==myName);
+  for(const m of members){await sendNotif(m,myName,'프로젝트 항목을 확인하고 완료해주세요!',p.name);}
+  toast('🔔 전체 팀원에게 재촉 알림을 보냈습니다!');
+}
+async function nudgePending(){
+  const p=cp();if(!p)return;
+  const myName=getMyName();
+  const members=getMembers(p).filter(m=>m!==myName);
+  const pendingMembers=members.filter(m=>getMemberPending(m,p).length>0);
+  for(const m of pendingMembers){await sendNotif(m,myName,'미완료 항목이 있습니다. 빨리 처리해주세요!',p.name);}
+  if(pendingMembers.length>0)toast('🔔 미응답자 '+pendingMembers.length+'명에게 재촉 알림을 보냈습니다!');
   else toast('모든 팀원이 이미 응답 완료했습니다!');
 }
 
