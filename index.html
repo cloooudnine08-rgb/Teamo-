@@ -242,6 +242,21 @@ textarea{resize:vertical;}
 .place-card:hover{border-color:var(--blue-m);}
 .row{display:flex;gap:8px;}
 .row-c{display:flex;gap:8px;align-items:center;}
+
+/* ── 가입 요청 ── */
+.join-req-item{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:0.5px solid var(--g100);}
+.join-req-item:last-child{border-bottom:none;}
+.join-req-name{font-size:13px;font-weight:500;}
+.join-req-time{font-size:11px;color:var(--g400);margin-top:2px;}
+.join-req-btns{display:flex;gap:6px;}
+.join-req-accept{background:var(--green);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;}
+.join-req-accept:hover{background:#059669;}
+.join-req-reject{background:none;border:1px solid var(--g200);color:var(--g500);border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;}
+.join-req-reject:hover{background:#FEF2F2;color:var(--red);border-color:#FCA5A5;}
+.join-req-badge{background:var(--red-l);color:var(--red-d);border:0.5px solid var(--red-m);border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:6px;}
+/* 대기 화면 */
+.pending-screen{text-align:center;padding:48px 20px;}
+.pending-screen .big-icon{font-size:48px;margin-bottom:16px;}
 ::-webkit-scrollbar{width:4px;height:4px;}
 ::-webkit-scrollbar-thumb{background:var(--g300);border-radius:99px;}
 </style>
@@ -319,7 +334,20 @@ textarea{resize:vertical;}
       <button class="btn btn-kakao btn-full" style="font-size:15px;height:48px;border-radius:12px;" onclick="doKakaoLoginForInvite()">
         <img src="https://developers.kakao.com/tool/resource/static/img/button/login/full/ko/kakao_login_medium_narrow.png" style="height:36px;border-radius:8px;" alt="카카오 로그인">
       </button>
-      <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="showPage('pg-login')">로그인으로</button>
+      <div class="divider">또는</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="inv-name-inp" placeholder="이름으로 참여하기">
+        <button class="btn btn-blue" style="white-space:nowrap;" onclick="joinByName()">참여</button>
+      </div>
+    </div>
+    <!-- 대기 화면 -->
+    <div id="inv-pending-box" style="display:none;" class="inv-box">
+      <div class="pending-screen">
+        <div class="big-icon">⏳</div>
+        <h2 style="font-size:18px;font-weight:700;margin-bottom:8px;">참가 요청 완료!</h2>
+        <p style="font-size:13px;color:var(--g500);line-height:1.6;">팀장이 요청을 수락하면<br>자동으로 프로젝트에 입장됩니다.</p>
+        <p style="font-size:12px;color:var(--g400);margin-top:12px;" id="inv-pending-name"></p>
+      </div>
     </div>
   </div>
 </div>
@@ -784,15 +812,80 @@ function doKakaoLoginForInvite(){
   if(tok)localStorage.setItem('tm_pending_invite',tok);
   doKakaoLogin();
 }
+// 이름으로 참여 (승인 요청 생성)
+async function joinByName(){
+  const nm=$$('inv-name-inp')?.value.trim();
+  if(!nm){toast('이름을 입력해주세요');return;}
+  S.user={name:nm};localStorage.setItem('tm_user',JSON.stringify(S.user));
+  await sendJoinRequest();
+}
+// 승인 요청 Firestore에 저장
+async function sendJoinRequest(){
+  const tok=getInviteTok();if(!tok)return;
+  await loadProjects();
+  const proj=S.projects.find(p=>p.inviteToken===tok);
+  if(!proj){toast('유효하지 않은 초대 링크');return;}
+  const nm=getMyName();
+  // 이미 멤버인지 확인
+  if(getMembers(proj).includes(nm)){
+    S.cur=proj.id;location.hash='';afterLogin();setTimeout(()=>openDetail(proj.id),150);return;
+  }
+  if(!db){toast('서버 연결 오류');return;}
+  try{
+    // 이미 요청했는지 확인
+    const ex=await db.collection('join_requests').where('projId','==',proj.id).where('name','==',nm).where('status','==','pending').get();
+    if(!ex.empty){showPendingScreen(nm,proj);return;}
+    await db.collection('join_requests').add({projId:proj.id,projName:proj.name,name:nm,img:S.user.img||'',creatorName:proj.creator||'팀장',status:'pending',createdAt:new Date()});
+    // 팀장에게 알림
+    await sendNotif(proj.creator||'팀장',nm,nm+'님이 프로젝트 참가를 요청했습니다. 알림에서 수락/거절하세요.',proj.name);
+    showPendingScreen(nm,proj);
+    // 수락 대기 리스너
+    waitForApproval(proj.id,nm);
+  }catch(e){toast('요청 실패: '+e.message);}
+}
+function showPendingScreen(nm,proj){
+  $$('inv-pending-name').textContent=nm+'님 · '+proj.name;
+  $$('inv-pending-box').style.display='block';
+  document.querySelector('.inv-box:not(#inv-pending-box)').style.display='none';
+}
+// 수락될 때까지 Firestore 리스너로 대기
+function waitForApproval(projId,nm){
+  if(!db)return;
+  const unsub=db.collection('join_requests').where('projId','==',projId).where('name','==',nm).onSnapshot(async snap=>{
+    for(const doc of snap.docs){
+      if(doc.data().status==='approved'){
+        unsub();
+        await loadProjects();
+        const proj=S.projects.find(p=>p.id===projId);
+        if(proj){S.cur=projId;location.hash='';afterLogin();setTimeout(()=>openDetail(projId),150);}
+        break;
+      }
+    }
+  });
+}
+// 카카오 로그인 후 자동으로 승인 요청
 async function joinProjectWithCurrentUser(tok){
   await loadProjects();
   const proj=S.projects.find(p=>p.inviteToken===tok);
   if(!proj){toast('유효하지 않은 초대 링크');return false;}
   const nm=getMyName();
-  const ml=[...(proj.memberList||[])];if(!ml.includes(nm))ml.push(nm);
-  await saveProj({...proj,memberList:ml});
-  S.cur=proj.id;location.hash='';
-  return proj.id;
+  if(getMembers(proj).includes(nm)){S.cur=proj.id;return proj.id;}
+  // 승인 요청 생성
+  if(db){
+    try{
+      const ex=await db.collection('join_requests').where('projId','==',proj.id).where('name','==',nm).where('status','==','pending').get();
+      if(ex.empty){
+        await db.collection('join_requests').add({projId:proj.id,projName:proj.name,name:nm,img:S.user.img||'',creatorName:proj.creator||'팀장',status:'pending',createdAt:new Date()});
+        await sendNotif(proj.creator||'팀장',nm,nm+'님이 프로젝트 참가를 요청했습니다. 알림에서 수락/거절하세요.',proj.name);
+      }
+    }catch(e){console.error(e);}
+  }
+  // 대기 화면 표시 후 리스너 등록
+  showPage('pg-invite');
+  $$('inv-title').textContent=proj.creator?proj.creator+'님이 '+proj.name+'에 초대했습니다!':proj.name;
+  showPendingScreen(nm,proj);
+  waitForApproval(proj.id,nm);
+  return false;
 }
 
 // ── KAKAO LOGIN ──
@@ -828,6 +921,8 @@ function afterLogin(){
   $$('greet-h2').textContent='안녕하세요, '+nm+'님 👋';
   showPage('pg-home');renderProjects();
   refreshNotifBadge();
+  startRealtimeListeners();
+  requestBrowserNotifPermission();
 }
 function doLogout(){S.user=null;localStorage.removeItem('tm_user');try{if(Kakao.isInitialized()&&Kakao.Auth.getAccessToken())Kakao.Auth.logout(()=>{});}catch{}showPage('pg-login');}
 function goHome(){showPage('pg-home');renderProjects();}
@@ -902,6 +997,7 @@ function openDetail(id){
   switchTopTab('nudge',$$('tt-nudge'));switchTab('schedule',document.querySelector('.tab-btn'));
   showPage('pg-detail');renderNudgeDash();loadAIPanel();loadNudgeAI();
   refreshNotifBadge();
+  startRealtimeListeners();
 }
 function updateProg(){const p=cp();if(!p)return;const pct=calcProg(p);$$('d-pct').textContent=pct+'%';$$('d-bar').style.width=pct+'%';}
 
@@ -1007,21 +1103,66 @@ async function loadMyNotifs(){
     return snap.docs.map(d=>({id:d.id,...d.data()}));
   }catch(e){console.error('loadMyNotifs',e);return[];}
 }
+// 내가 팀장인 프로젝트의 가입 요청 불러오기
+async function loadMyJoinRequests(){
+  if(!db)return[];
+  const myName=getMyName();
+  try{
+    const snap=await db.collection('join_requests').where('creatorName','==',myName).where('status','==','pending').orderBy('createdAt','desc').get();
+    return snap.docs.map(d=>({id:d.id,...d.data()}));
+  }catch(e){console.error('loadMyJoinRequests',e);return[];}
+}
 async function refreshNotifBadge(){
-  const notifs=await loadMyNotifs();
-  const hasUnread=notifs.some(n=>!n.read);
+  const [notifs,joinReqs]=await Promise.all([loadMyNotifs(),loadMyJoinRequests()]);
+  const hasUnread=notifs.some(n=>!n.read)||joinReqs.length>0;
   ['notif-dot','notif-dot2'].forEach(id=>{const el=$$(id);if(el)el.classList.toggle('on',hasUnread);});
-  S.notifs=notifs;
+  S.notifs=notifs;S.joinReqs=joinReqs;
 }
 function renderNotifPanel(listId){
-  const notifs=S.notifs||[];
+  const notifs=S.notifs||[];const joinReqs=S.joinReqs||[];
   const el=$$(listId);if(!el)return;
-  if(!notifs.length){el.innerHTML='<div class="notif-empty">알림이 없습니다.</div>';return;}
-  el.innerHTML=notifs.map(n=>{
+  let html='';
+  // 가입 요청 먼저
+  if(joinReqs.length){
+    html+=joinReqs.map(r=>'<div class="notif-item unread"><div class="notif-item-title">👋 가입 요청</div><div><b>'+r.name+'</b>님이 <b>'+r.projName+'</b> 참가를 요청했습니다.</div><div class="join-req-btns" style="margin-top:6px;"><button class="join-req-accept" onclick="acceptJoinReq(\''+r.id+'\',\''+r.projId+'\',\''+r.name+'\')">수락</button><button class="join-req-reject" onclick="rejectJoinReq(\''+r.id+'\',\''+r.name+'\',\''+r.projName+'\')">거절</button></div></div>').join('');
+  }
+  if(!notifs.length&&!joinReqs.length){el.innerHTML='<div class="notif-empty">알림이 없습니다.</div>';return;}
+  html+=notifs.map(n=>{
     const time=n.createdAt?.toDate?n.createdAt.toDate():new Date();
-    const timeStr=time.getMonth()+1+'/'+time.getDate()+' '+String(time.getHours()).padStart(2,'0')+':'+String(time.getMinutes()).padStart(2,'0');
-    return '<div class="notif-item '+(n.read?'':'unread')+'"><div class="notif-item-title">🔔 '+n.from+'님의 재촉</div><div>'+n.message+'</div><div class="notif-item-time">'+(n.project?n.project+' · ':'')+timeStr+'</div></div>';
+    const timeStr=(time.getMonth()+1)+'/'+time.getDate()+' '+String(time.getHours()).padStart(2,'0')+':'+String(time.getMinutes()).padStart(2,'0');
+    return '<div class="notif-item '+(n.read?'':'unread')+'"><div class="notif-item-title">🔔 '+n.from+'님의 메시지</div><div>'+n.message+'</div><div class="notif-item-time">'+(n.project?n.project+' · ':'')+timeStr+'</div></div>';
   }).join('');
+  el.innerHTML=html;
+}
+// 수락
+async function acceptJoinReq(reqId,projId,nm){
+  if(!db)return;
+  try{
+    await db.collection('join_requests').doc(reqId).update({status:'approved'});
+    await loadProjects();
+    const proj=S.projects.find(p=>p.id==projId);
+    if(proj){
+      const ml=[...(proj.memberList||[])];if(!ml.includes(nm))ml.push(nm);
+      await saveProj({...proj,memberList:ml});
+    }
+    await sendNotif(nm,getMyName(),'참가 요청이 수락되었습니다! 프로젝트에 입장하세요.',proj?.name||'');
+    toast('✅ '+nm+'님을 수락했습니다!');
+    await refreshNotifBadge();
+    renderNotifPanel('notif-list');renderNotifPanel('notif-list2');
+    renderProjects();
+    if(S.cur==projId)renderSidebar();
+  }catch(e){toast('수락 실패: '+e.message);}
+}
+// 거절
+async function rejectJoinReq(reqId,nm,projName){
+  if(!db)return;
+  try{
+    await db.collection('join_requests').doc(reqId).update({status:'rejected'});
+    await sendNotif(nm,getMyName(),'참가 요청이 거절되었습니다.',projName);
+    toast(nm+'님의 요청을 거절했습니다.');
+    await refreshNotifBadge();
+    renderNotifPanel('notif-list');renderNotifPanel('notif-list2');
+  }catch(e){toast('거절 실패: '+e.message);}
 }
 async function toggleNotifPanel(e){
   e.stopPropagation();
@@ -1052,11 +1193,71 @@ async function markAllNotifRead(){
     toast('모든 알림을 읽음으로 표시했습니다.');
   }catch(e){console.error('markAllNotifRead',e);}
 }
+// ── 실시간 리스너 ──
+let _unsubs=[];
+function clearListeners(){_unsubs.forEach(u=>u());_unsubs=[];}
+function startRealtimeListeners(){
+  if(!db||!S.user)return;
+  clearListeners();
+  const myName=getMyName();
+  // 1. 내 알림 실시간
+  try{
+    const u1=db.collection('notifications').where('to','==',myName).orderBy('createdAt','desc').limit(30).onSnapshot(snap=>{
+      S.notifs=snap.docs.map(d=>({id:d.id,...d.data()}));
+      const hasUnread=S.notifs.some(n=>!n.read)||(S.joinReqs||[]).length>0;
+      ['notif-dot','notif-dot2'].forEach(id=>$$(id)?.classList.toggle('on',hasUnread));
+      if($$('notif-panel')?.classList.contains('on'))renderNotifPanel('notif-list');
+      if($$('notif-panel2')?.classList.contains('on'))renderNotifPanel('notif-list2');
+    });
+    _unsubs.push(u1);
+  }catch(e){console.error('notif listener',e);}
+  // 2. 가입 요청 실시간 (내가 팀장인 경우)
+  try{
+    const u2=db.collection('join_requests').where('creatorName','==',myName).where('status','==','pending').onSnapshot(snap=>{
+      S.joinReqs=snap.docs.map(d=>({id:d.id,...d.data()}));
+      const hasUnread=(S.notifs||[]).some(n=>!n.read)||S.joinReqs.length>0;
+      ['notif-dot','notif-dot2'].forEach(id=>$$(id)?.classList.toggle('on',hasUnread));
+      if(S.joinReqs.length)toast('👋 새 가입 요청이 있습니다. 알림을 확인하세요!');
+      if($$('notif-panel')?.classList.contains('on'))renderNotifPanel('notif-list');
+      if($$('notif-panel2')?.classList.contains('on'))renderNotifPanel('notif-list2');
+    });
+    _unsubs.push(u2);
+  }catch(e){console.error('joinreq listener',e);}
+  // 3. 현재 열린 프로젝트 실시간 동기화
+  if(S.cur){
+    try{
+      const u3=db.collection('teamo_data').doc(encodeKey('proj:'+S.cur)).onSnapshot(snap=>{
+        if(!snap.exists)return;
+        const p=snap.data().value;
+        if(!p)return;
+        S.projects=S.projects.map(x=>x.id===S.cur?p:x);
+        if($$('pg-detail')?.classList.contains('on')){
+          updateProg();renderSidebar();renderNudgeDash();
+        }
+      });
+      _unsubs.push(u3);
+    }catch(e){console.error('proj listener',e);}
+  }
+}
+// 브라우저 알림 권한 요청
+async function requestBrowserNotifPermission(){
+  if(!('Notification' in window))return;
+  if(Notification.permission==='default'){
+    await Notification.requestPermission();
+  }
+}
+// 브라우저 알림 전송
+function sendBrowserNotif(title,body,projId){
+  if(Notification.permission!=='granted')return;
+  const n=new Notification(title,{body,icon:'https://cloooudnine08-rgb.github.io/Teamo-/favicon.ico'});
+  if(projId)n.onclick=()=>{window.focus();openDetail(projId);};
+}
 
 async function nudgeMember(nm,item){
   const p=cp();const myName=getMyName();
   const msg=item?'['+item+'] 항목을 완료해주세요!':'프로젝트 항목을 완료해주세요!';
   await sendNotif(nm,myName,msg,p?.name);
+  sendBrowserNotif('🔔 재촉 알림 - '+p?.name,myName+'님: '+msg,p?.id);
   if(item)toast('🔔 '+nm+'님에게 ['+item+'] 재촉 알림을 보냈습니다!');
   else toast('🔔 '+nm+'님에게 재촉 알림을 보냈습니다!');
 }
