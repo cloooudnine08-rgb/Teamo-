@@ -1138,7 +1138,7 @@ function renderNudgeDash(){
   const ITEMS=[
     {key:'일정',label:'📅 일정',checkFn:(nm,p)=>(p.allSchedSel&&p.allSchedSel[nm]?.length>0)||(p.confirmedDates?.length>0)},
     {key:'역할',label:'👥 역할',checkFn:(nm,p)=>(p.roleParticipants||[]).includes(nm)},
-    {key:'투표',label:'🗳️ 투표',checkFn:(nm,p)=>(p.votes||[]).length===0||(p.voteParticipants||[]).includes(nm),noVoteSkip:(p)=>(p.votes||[]).length===0},
+    {key:'투표',label:'🗳️ 투표',checkFn:(nm,p)=>(p.voteParticipants||[]).includes(nm),noVoteSkip:(p)=>(p.votes||[]).length===0},
   ];
   $$('nudge-members').innerHTML=members.map(nm=>{
     const pct=memberPct(nm,p);const pending=getMemberPending(nm,p);const hasPending=pending.length>0;
