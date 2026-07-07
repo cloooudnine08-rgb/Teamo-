@@ -311,13 +311,14 @@ textarea{resize:vertical;}
     <div class="inv-box">
       <div style="font-size:36px;margin-bottom:10px;">🎉</div>
       <h2 style="font-size:20px;font-weight:700;margin-bottom:6px;" id="inv-title">팀 프로젝트에 초대되었습니다!</h2>
-      <p style="font-size:13px;color:var(--g500);margin-bottom:16px;" id="inv-desc">이름을 입력하고 참여하세요</p>
-      <div id="inv-info" style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--rs);padding:12px;margin-bottom:14px;text-align:left;">
+      <p style="font-size:13px;color:var(--g500);margin-bottom:16px;" id="inv-desc">카카오 로그인으로 참여하세요</p>
+      <div id="inv-info" style="background:var(--g50);border:1px solid var(--g200);border-radius:var(--rs);padding:12px;margin-bottom:16px;text-align:left;">
         <div style="font-size:13px;font-weight:600;" id="inv-pname">-</div>
         <div style="font-size:12px;color:var(--g400);margin-top:3px;" id="inv-pmeta">-</div>
       </div>
-      <div style="margin-bottom:12px;text-align:left;"><label class="lbl">참여할 이름</label><input type="text" id="inv-name-inp" placeholder="이름 입력"></div>
-      <button class="btn btn-blue btn-full" onclick="joinProject()">프로젝트 참여하기</button>
+      <button class="btn btn-kakao btn-full" style="font-size:15px;height:48px;border-radius:12px;" onclick="doKakaoLoginForInvite()">
+        <img src="https://developers.kakao.com/tool/resource/static/img/button/login/full/ko/kakao_login_medium_narrow.png" style="height:36px;border-radius:8px;" alt="카카오 로그인">
+      </button>
       <button class="btn btn-ghost btn-full" style="margin-top:8px;" onclick="showPage('pg-login')">로그인으로</button>
     </div>
   </div>
@@ -692,7 +693,15 @@ async function init(){
     showConnectionWarning();
   }
   await loadProjects();
-  await handleKakaoRedirect();
+  const kakaoLoggedIn=await handleKakaoRedirect();
+  const pendingTok=localStorage.getItem('tm_pending_invite');
+  if(kakaoLoggedIn && pendingTok){
+    localStorage.removeItem('tm_pending_invite');
+    const projId=await joinProjectWithCurrentUser(pendingTok);
+    afterLogin();
+    if(projId)setTimeout(()=>openDetail(projId),150);
+    return;
+  }
   checkInvite();
   if(!getInviteTok()&&S.user)afterLogin();
 }
@@ -761,20 +770,29 @@ async function checkInvite(){
   const tok=getInviteTok();if(!tok)return;
   await loadProjects();
   const proj=S.projects.find(p=>p.inviteToken===tok);
-  if(proj){$$('inv-title').textContent=proj.name+'에 초대되었습니다!';$$('inv-pname').textContent=proj.name;$$('inv-pmeta').textContent='팀원 '+proj.members+'명'+(proj.deadline?' · 마감 '+proj.deadline:'');showPage('pg-invite');}
+  if(proj){
+    const creatorTxt=proj.creator?proj.creator+'님이 '+proj.name+'에 초대했습니다!':proj.name+'에 초대되었습니다!';
+    $$('inv-title').textContent=creatorTxt;
+    $$('inv-pname').textContent=proj.name;
+    $$('inv-pmeta').textContent='팀원 '+proj.members+'명'+(proj.deadline?' · 마감 '+proj.deadline:'');
+    showPage('pg-invite');
+  }
   else{$$('inv-title').textContent='유효하지 않은 초대 링크';$$('inv-desc').textContent='링크를 다시 확인해주세요.';$$('inv-info').style.display='none';showPage('pg-invite');}
 }
-async function joinProject(){
-  const tok=getInviteTok();const nm=$$('inv-name-inp').value.trim();
-  if(!nm){toast('이름을 입력해주세요');return;}
+function doKakaoLoginForInvite(){
+  const tok=getInviteTok();
+  if(tok)localStorage.setItem('tm_pending_invite',tok);
+  doKakaoLogin();
+}
+async function joinProjectWithCurrentUser(tok){
   await loadProjects();
   const proj=S.projects.find(p=>p.inviteToken===tok);
-  if(!proj){toast('유효하지 않은 초대 링크');return;}
+  if(!proj){toast('유효하지 않은 초대 링크');return false;}
+  const nm=getMyName();
   const ml=[...(proj.memberList||[])];if(!ml.includes(nm))ml.push(nm);
   await saveProj({...proj,memberList:ml});
-  S.user={name:nm};localStorage.setItem('tm_user',JSON.stringify(S.user));
   S.cur=proj.id;location.hash='';
-  afterLogin();setTimeout(()=>openDetail(proj.id),100);
+  return proj.id;
 }
 
 // ── KAKAO LOGIN ──
@@ -863,7 +881,7 @@ async function deleteProject(id,name){
 async function createProject(){
   const nm=$$('np-nm').value.trim();if(!nm){toast('프로젝트 이름을 입력해주세요');return;}
   const tok=genTok();const namesRaw=$$('np-names').value.trim();const memberList=namesRaw?namesRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
-  const proj={id:Date.now(),name:nm,members:parseInt($$('np-mb').value)||4,deadline:$$('np-dl').value,createdAt:new Date().toISOString().split('T')[0],inviteToken:tok,roles:[],votes:[],allSchedSel:{},confirmedDates:[],scheduleParticipants:[],roleParticipants:[],voteParticipants:[],nudgeCount:{},memberList};
+  const proj={id:Date.now(),name:nm,members:parseInt($$('np-mb').value)||4,deadline:$$('np-dl').value,createdAt:new Date().toISOString().split('T')[0],inviteToken:tok,creator:getMyName(),roles:[],votes:[],allSchedSel:{},confirmedDates:[],scheduleParticipants:[],roleParticipants:[],voteParticipants:[],nudgeCount:{},memberList};
   S.projects.unshift(proj);await dbSet('proj:'+proj.id,proj);
   $$('m-inv-url').textContent=makeInviteUrl(tok);
   $$('m-form').style.display='none';$$('m-success').style.display='block';
