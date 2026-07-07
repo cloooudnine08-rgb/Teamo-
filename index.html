@@ -1184,18 +1184,41 @@ async function refreshNotifBadge(){
 function renderNotifPanel(listId){
   const notifs=S.notifs||[];const joinReqs=S.joinReqs||[];
   const el=$$(listId);if(!el)return;
-  let html='';
-  // 가입 요청 먼저
-  if(joinReqs.length){
-    html+=joinReqs.map(r=>'<div class="notif-item unread"><div class="notif-item-title">👋 가입 요청</div><div><b>'+r.name+'</b>님이 <b>'+r.projName+'</b> 참가를 요청했습니다.</div><div class="join-req-btns" style="margin-top:6px;"><button class="join-req-accept" onclick="acceptJoinReq(\''+r.id+'\',\''+r.projId+'\',\''+r.name+'\')">수락</button><button class="join-req-reject" onclick="rejectJoinReq(\''+r.id+'\',\''+r.name+'\',\''+r.projName+'\')">거절</button></div></div>').join('');
-  }
   if(!notifs.length&&!joinReqs.length){el.innerHTML='<div class="notif-empty">알림이 없습니다.</div>';return;}
-  html+=notifs.map(n=>{
+  el.innerHTML='';
+  // 가입 요청 카드 (DOM 직접 생성 - 따옴표 이스케이프 문제 완전 방지)
+  joinReqs.forEach(r=>{
+    const div=document.createElement('div');
+    div.className='notif-item unread';
+    div.innerHTML='<div class="notif-item-title">👋 가입 요청</div>'
+      +'<div style="font-size:13px;margin:4px 0;"><b>'+r.name+'</b>님이 <b>'+r.projName+'</b> 참가를 요청했습니다.</div>';
+    const btnRow=document.createElement('div');
+    btnRow.style.cssText='display:flex;gap:8px;margin-top:8px;';
+    const acceptBtn=document.createElement('button');
+    acceptBtn.className='join-req-accept';
+    acceptBtn.textContent='✅ 수락';
+    const rid=r.id,rpid=r.projId,rnm=r.name,rpnm=r.projName;
+    acceptBtn.addEventListener('click',function(e){e.stopPropagation();acceptJoinReq(rid,rpid,rnm);});
+    const rejectBtn=document.createElement('button');
+    rejectBtn.className='join-req-reject';
+    rejectBtn.textContent='❌ 거절';
+    rejectBtn.addEventListener('click',function(e){e.stopPropagation();rejectJoinReq(rid,rnm,rpnm);});
+    btnRow.appendChild(acceptBtn);
+    btnRow.appendChild(rejectBtn);
+    div.appendChild(btnRow);
+    el.appendChild(div);
+  });
+  // 일반 알림
+  notifs.forEach(n=>{
     const time=n.createdAt?.toDate?n.createdAt.toDate():new Date();
     const timeStr=(time.getMonth()+1)+'/'+time.getDate()+' '+String(time.getHours()).padStart(2,'0')+':'+String(time.getMinutes()).padStart(2,'0');
-    return '<div class="notif-item '+(n.read?'':'unread')+'"><div class="notif-item-title">🔔 '+n.from+'님의 메시지</div><div>'+n.message+'</div><div class="notif-item-time">'+(n.project?n.project+' · ':'')+timeStr+'</div></div>';
-  }).join('');
-  el.innerHTML=html;
+    const div=document.createElement('div');
+    div.className='notif-item '+(n.read?'':'unread');
+    div.innerHTML='<div class="notif-item-title">🔔 '+n.from+'님의 메시지</div>'
+      +'<div>'+n.message+'</div>'
+      +'<div class="notif-item-time">'+(n.project?n.project+' · ':'')+timeStr+'</div>';
+    el.appendChild(div);
+  });
 }
 // 수락 - 멤버 추가 + 실시간 동기화
 async function acceptJoinReq(reqId,projId,nm){
