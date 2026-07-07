@@ -238,8 +238,7 @@ textarea{resize:vertical;}
 .ndg-st.ok{color:var(--green);}.ndg-st.warn{color:var(--red);}
 .sb-nbtn{background:var(--red);color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;}
 .sb-nbtn:disabled{background:var(--g200);color:var(--g400);cursor:default;}
-.place-card{background:var(--white);border:1px solid var(--g200);border-radius:var(--rs);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;cursor:pointer;transition:border-color .15s;}
-.place-card:hover{border-color:var(--blue-m);}
+
 .row{display:flex;gap:8px;}
 .row-c{display:flex;gap:8px;align-items:center;}
 
@@ -430,7 +429,7 @@ textarea{resize:vertical;}
             <button class="tab-btn on" onclick="switchTab('schedule',this)">📅 일정 조율</button>
             <button class="tab-btn" onclick="switchTab('role',this)">👥 역할 배분</button>
             <button class="tab-btn" onclick="switchTab('vote',this)">🗳️ 투표</button>
-            <button class="tab-btn" onclick="switchTab('place',this)">📍 장소 추천</button>
+
           </div>
 
           <!-- SCHEDULE -->
@@ -555,33 +554,8 @@ textarea{resize:vertical;}
             </div>
           </div>
 
-          <!-- PLACE -->
-          <div id="tab-place" class="tab-pane card">
-            <h3 style="font-size:14px;font-weight:700;margin-bottom:3px;">장소 추천</h3>
-            <p style="font-size:12px;color:var(--g500);margin-bottom:12px;">회의에 적합한 장소를 찾으세요.</p>
-            <div class="row" style="margin-bottom:12px;">
-              <input type="text" id="place-kw" placeholder="지역 또는 장소 유형" style="flex:1;" onkeydown="if(event.key==='Enter')searchPlaces()">
-              <button class="btn btn-blue" onclick="searchPlaces()">검색</button>
-            </div>
-            <div id="place-results"></div>
-            <div class="card" style="background:#FFFBEB;border-color:#FDE68A;margin-bottom:14px;">
-              <div style="font-size:12px;font-weight:600;color:#92400E;margin-bottom:2px;">📍 지도 API 연동 예정</div>
-              <div style="font-size:11px;color:#78350F;">카카오맵/구글맵 연동 시 실시간 위치 검색 가능</div>
-            </div>
-            <div class="ai-chat" style="height:320px;">
-              <div class="ai-chat-hd">✦ AI 장소 도우미</div>
-              <div class="ai-sugs">
-                <span class="ai-sug" onclick="sendAI('place','조용한 스터디카페 추천해줘')">카페 추천</span>
-                <span class="ai-sug" onclick="sendAI('place','스터디카페 vs 카페 비교')">비교 분석</span>
-                <span class="ai-sug" onclick="sendAI('place','대형 팀 회의 장소 팁')">장소 팁</span>
-              </div>
-              <div class="ai-msgs" id="ai-msg-place"></div>
-              <div class="ai-inp-row">
-                <textarea id="ai-inp-place" rows="1" placeholder="장소 조건, 위치..." onkeydown="aiKD(event,'place')"></textarea>
-                <button class="ai-send" onclick="sendAI('place',null)" id="ai-btn-place">&#x2191;</button>
-              </div>
-            </div>
-          </div>
+
+
         </div>
 
         <!-- SIDEBAR -->
@@ -692,7 +666,7 @@ async function dbList(prefix){
 }
 
 // ── STATE ──
-let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new Date(),voteOpts:[],voteChecked:[],aiLd:{},aiHist:{schedule:[],role:[],vote:[],place:[]}};
+let S={user:null,projects:[],cur:null,mySchedSel:{},calMode:'month',calRef:new Date(),voteOpts:[],voteChecked:[],aiLd:{},aiHist:{schedule:[],role:[],vote:[]}};
 
 // ── INIT ──
 async function init(){
@@ -1056,7 +1030,7 @@ function openDetail(id){
   S.cur=id;const p=cp();
   const myName=getMyName();S.mySchedSel={};
   if(p.allSchedSel&&p.allSchedSel[myName])p.allSchedSel[myName].forEach(k=>{S.mySchedSel[k]=true;});
-  S.voteOpts=[];S.voteChecked=[];S.aiHist={schedule:[],role:[],vote:[],place:[]};
+  S.voteOpts=[];S.voteChecked=[];S.aiHist={schedule:[],role:[],vote:[]};
   $$('d-name').textContent=p.name;$$('d-meta').textContent='팀원 '+p.members+'명'+(p.deadline?' · 마감 '+p.deadline:'');
   updateProg();buildCal();renderRoleList();renderVotePage();renderSidebar();
   // 재촉 탭이 기본
@@ -1539,19 +1513,15 @@ function renderVotePage(){
 function toggleVC(id,el){const i=S.voteChecked.indexOf(id);if(i===-1)S.voteChecked.push(id);else S.voteChecked.splice(i,1);el.classList.toggle('ck',S.voteChecked.includes(id));}
 function toggleVoters(btn){const vl=btn.closest('.vote-opt').parentElement.querySelector('.voter-list');if(vl)vl.classList.toggle('on');}
 
-// ── PLACE ──
-const PLACES=[{name:'스터디카페 Zone',walk:5,plug:true,noise:'조용',score:92},{name:'북카페 페이지',walk:8,plug:true,noise:'보통',score:85},{name:'시립도서관',walk:12,plug:true,noise:'매우 조용',score:88},{name:'카페 봄날',walk:3,plug:false,noise:'보통',score:74},{name:'스타벅스',walk:6,plug:true,noise:'보통',score:78}];
-function searchPlaces(){
-  const kw=$$('place-kw').value.trim().toLowerCase();const res=kw?PLACES.filter(p=>p.name.toLowerCase().includes(kw)||p.noise.includes(kw)):PLACES;
-  $$('place-results').innerHTML=(res.length?res:PLACES).map(p=>'<div class="place-card"><div><div style="font-size:13px;font-weight:600;margin-bottom:4px;">'+p.name+'</div><div style="display:flex;gap:4px;flex-wrap:wrap;"><span class="badge b-blue">도보 '+p.walk+'분</span>'+(p.plug?'<span class="badge b-green">콘센트 ✓</span>':'')+'<span class="badge b-purple">'+p.noise+'</span></div></div><div style="text-align:right;"><div style="font-size:20px;font-weight:800;color:var(--blue);">'+p.score+'%</div><div style="font-size:10px;color:var(--g400);">회의 적합도</div></div></div>').join('');
-}
+
+
 
 // ── AI (Pollinations - 무료, 키 불필요) ──
 const AI_SYS={
   schedule:p=>'당신은 팀 일정 조율 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명, 마감 '+(p.deadline||'미정')+'. 팀원들이 각자 가능한 날짜를 선택하고 팀장이 최종 확정하는 방식입니다. 한국어로 간결하게 답하세요.',
   role:p=>'당신은 역할 배분 AI입니다. 프로젝트 "'+p.name+'" 팀원 '+p.members+'명. 역할: '+JSON.stringify((p.roles||[]).map(r=>r.name+(r.assigned?' ('+r.person+')':' (미배정)')))+'. 한국어로 간결하게 답하세요.',
   vote:p=>'당신은 투표 분석 AI입니다. 투표: '+JSON.stringify((p.votes||[]).map(v=>v.label+' '+v.count+'표 투표자:('+( v.voters?.join(',')||'없음')+')'))+'. 한국어로 간결하게 답하세요.',
-  place:p=>'당신은 회의 장소 추천 AI입니다. 팀원 '+p.members+'명. 한국어로 간결하게 답하세요.',
+
 };
 async function callClaude(system,messages,onChunk){
   const chatMessages=[{role:'system',content:system},...messages.map(m=>({role:m.role,content:m.content}))];
