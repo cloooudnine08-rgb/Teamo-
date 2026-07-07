@@ -586,12 +586,7 @@ textarea{resize:vertical;}
 
         <!-- SIDEBAR -->
         <div class="sidebar">
-          <!-- 재촉 사이드바: 빨간 강조 -->
-          <div class="sb-card red">
-            <div class="sb-title red">🔔 팀원 응답 현황</div>
-            <div id="sb-nudge-list"></div>
-            <button class="btn btn-red btn-sm btn-full" style="margin-top:8px;" onclick="nudgeAll()">🔔 전체 재촉</button>
-          </div>
+          <!-- 팀원 응답 현황 카드 제거됨 (재촉 탭에서 확인) -->
           <div class="sb-card" style="background:linear-gradient(135deg,var(--blue-l),#EDE9FE);border-color:var(--blue-m);">
             <div class="sb-title" style="color:var(--blue-d);">✦ AI 프로젝트 분석</div>
             <div id="ai-proj-panel" style="font-size:12px;color:var(--g700);line-height:1.7;">분석 중...</div>
@@ -601,14 +596,8 @@ textarea{resize:vertical;}
             <div style="font-size:11px;color:var(--blue);background:var(--g50);border:1px solid var(--g200);border-radius:6px;padding:7px 9px;margin-bottom:7px;word-break:break-all;cursor:text;user-select:all;" id="sb-invite-url">-</div>
             <button class="btn btn-ghost btn-sm btn-full" onclick="copySbInvite()">링크 복사</button>
           </div>
-          <div class="sb-card">
-            <div class="sb-title">👥 역할 현황</div>
-            <div id="sb-roles" style="font-size:12px;color:var(--g500);">역할 없음</div>
-          </div>
-          <div class="sb-card">
-            <div class="sb-title">🗳️ 투표 현황</div>
-            <div id="sb-votes" style="font-size:12px;color:var(--g500);">안건 없음</div>
-          </div>
+          <!-- 역할 현황 카드 제거됨 (역할 배분 탭에서 확인) -->
+          <!-- 투표 현황 카드 제거됨 (투표 탭에서 확인) -->
         </div>
       </div>
     </div>
@@ -1092,15 +1081,6 @@ function switchTab(id,el){
 function renderSidebar(){
   const p=cp();if(!p)return;
   $$('sb-invite-url').textContent=makeInviteUrl(p.inviteToken);
-  const rl=p.roles||[];
-  $$('sb-roles').innerHTML=rl.length?rl.map(r=>'<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px;"><span>'+r.name+'</span><span style="color:'+(r.assigned?'var(--green)':'var(--orange)')+';">'+(r.assigned?'✓ '+r.person:'미배정')+'</span></div>').join(''):'역할 없음';
-  const vl=p.votes||[];
-  $$('sb-votes').innerHTML=vl.length?vl.map(v=>'<div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12px;"><span>'+v.label+'</span><span style="color:var(--blue);font-weight:600;">'+v.count+'표</span></div>').join(''):'안건 없음';
-  const members=getMembers(p);
-  $$('sb-nudge-list').innerHTML=members.map(nm=>{
-    const pending=getMemberPending(nm,p).length>0;
-    return '<div class="ndg-row"><div><div style="font-size:12px;font-weight:500;">'+nm+'</div><div class="ndg-st '+(pending?'warn':'ok')+'">'+(pending?'⚠ 미완료':'✓ 완료')+'</div></div><button class="sb-nbtn" '+(pending?'':'disabled')+' onclick="nudgeMember(\''+nm+'\',null)">재촉</button></div>';
-  }).join('');
 }
 function copySbInvite(){copyUrl('sb-invite-url');}
 
