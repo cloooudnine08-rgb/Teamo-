@@ -726,8 +726,15 @@ async function init(){
   if(kakaoLoggedIn && pendingTok){
     localStorage.removeItem('tm_pending_invite');
     const projId=await joinProjectWithCurrentUser(pendingTok);
-    afterLogin();
-    if(projId)setTimeout(()=>openDetail(projId),150);
+    if(projId){
+      // 팀장 본인이거나 이미 멤버: 바로 입장
+      afterLogin();setTimeout(()=>openDetail(projId),150);
+    } else {
+      // 승인 대기 중: pg-invite가 이미 표시되어 있음
+      // nav 이름만 업데이트
+      const nm=S.user?.name||'';
+      ['nav-nm','nav-nm2'].forEach(id=>$$(id)&&($$(id).textContent=nm));
+    }
     return;
   }
   checkInvite();
@@ -740,10 +747,15 @@ function showConnectionWarning(){
   document.body.prepend(banner);
 }
 async function loadProjects(){
+  const myName=getMyName();
+  if(!myName||myName==='나'){S.projects=[];return;}
   const keys=await dbList('proj:');const list=[];
   for(const k of keys){
     const p=await dbGet(k);
     if(p){
+      // 내가 팀장이거나 승인된 멤버인 경우만 로드
+      const isMine=p.creator===myName||(p.memberList||[]).includes(myName);
+      if(!isMine)continue;
       if(!p.votes)p.votes=[];
       p.votes.forEach(v=>{if(!v.voters)v.voters=[];});
       if(!p.memberList)p.memberList=[];
@@ -754,6 +766,21 @@ async function loadProjects(){
     }
   }
   S.projects=list.sort((a,b)=>b.id-a.id);
+}
+// 토큰으로 Firestore에서 직접 프로젝트 찾기
+async function findProjByToken(tok){
+  if(!db||!tok)return null;
+  try{
+    const snap=await db.collection('teamo_data').where('value.inviteToken','==',tok).limit(1).get();
+    if(!snap.empty)return snap.docs[0].data().value;
+  }catch{}
+  // fallback: dbList로 순차 탐색
+  const keys=await dbList('proj:');
+  for(const k of keys){
+    const p=await dbGet(k);
+    if(p&&p.inviteToken===tok)return p;
+  }
+  return null;
 }
 async function saveProj(p){S.projects=S.projects.map(x=>x.id===p.id?p:x);await dbSet('proj:'+p.id,p);}
 
@@ -796,9 +823,10 @@ function getInviteTok(){const m=location.hash.match(/^#invite\/(.+)$/);return m?
 window.addEventListener('hashchange',checkInvite);
 async function checkInvite(){
   const tok=getInviteTok();if(!tok)return;
-  await loadProjects();
-  const proj=S.projects.find(p=>p.inviteToken===tok);
+  // Firestore에서 직접 토큰으로 프로젝트 조회 (로컬 캐시 의존 안 함)
+  const proj=await findProjByToken(tok);
   if(proj){
+    S._inviteProj=proj; // 임시 저장
     const creatorTxt=proj.creator?proj.creator+'님이 '+proj.name+'에 초대했습니다!':proj.name+'에 초대되었습니다!';
     $$('inv-title').textContent=creatorTxt;
     $$('inv-pname').textContent=proj.name;
@@ -822,26 +850,45 @@ async function joinByName(){
 // 승인 요청 Firestore에 저장
 async function sendJoinRequest(){
   const tok=getInviteTok();if(!tok)return;
-  await loadProjects();
-  const proj=S.projects.find(p=>p.inviteToken===tok);
+  const proj=S._inviteProj||await findProjByToken(tok);
   if(!proj){toast('유효하지 않은 초대 링크');return;}
   const nm=getMyName();
-  // 이미 멤버인지 확인
-  if(getMembers(proj).includes(nm)){
-    S.cur=proj.id;location.hash='';afterLogin();setTimeout(()=>openDetail(proj.id),150);return;
+  if(!nm||nm==='나'){toast('먼저 로그인해주세요');return;}
+  // 이미 승인된 멤버인지 확인
+  const isCreator=proj.creator===nm;
+  const isMember=(proj.memberList||[]).includes(nm);
+  if(isCreator||isMember){
+    // 이미 멤버: 바로 입장
+    S.cur=proj.id;
+    S.projects=[proj,...S.projects.filter(p=>p.id!==proj.id)];
+    location.hash='';afterLogin();setTimeout(()=>openDetail(proj.id),150);return;
   }
   if(!db){toast('서버 연결 오류');return;}
   try{
-    // 이미 요청했는지 확인
-    const ex=await db.collection('join_requests').where('projId','==',proj.id).where('name','==',nm).where('status','==','pending').get();
-    if(!ex.empty){showPendingScreen(nm,proj);return;}
-    await db.collection('join_requests').add({projId:proj.id,projName:proj.name,name:nm,img:S.user.img||'',creatorName:proj.creator||'팀장',status:'pending',createdAt:new Date()});
-    // 팀장에게 알림
-    await sendNotif(proj.creator||'팀장',nm,nm+'님이 프로젝트 참가를 요청했습니다. 알림에서 수락/거절하세요.',proj.name);
+    // 중복 요청 확인
+    const ex=await db.collection('join_requests')
+      .where('projId','==',proj.id).where('name','==',nm).get();
+    if(!ex.empty){
+      const existing=ex.docs[0].data();
+      if(existing.status==='pending'){showPendingScreen(nm,proj);waitForApproval(proj.id,nm);return;}
+      if(existing.status==='approved'){
+        S.cur=proj.id;location.hash='';afterLogin();setTimeout(()=>openDetail(proj.id),150);return;
+      }
+      if(existing.status==='rejected'){toast('팀장이 요청을 거절했습니다.');return;}
+    }
+    // 신규 요청 생성
+    await db.collection('join_requests').add({
+      projId:proj.id,projName:proj.name,name:nm,
+      img:S.user?.img||'',creatorName:proj.creator||'',
+      status:'pending',createdAt:new Date()
+    });
+    // 팀장에게 알림 + 브라우저 알림
+    if(proj.creator){
+      await sendNotif(proj.creator,nm,nm+'님이 참가를 요청했습니다. 알림벨을 눌러 수락/거절하세요.',proj.name);
+    }
     showPendingScreen(nm,proj);
-    // 수락 대기 리스너
     waitForApproval(proj.id,nm);
-  }catch(e){toast('요청 실패: '+e.message);}
+  }catch(e){toast('요청 실패: '+e.message);console.error(e);}
 }
 function showPendingScreen(nm,proj){
   $$('inv-pending-name').textContent=nm+'님 · '+proj.name;
@@ -851,41 +898,57 @@ function showPendingScreen(nm,proj){
 // 수락될 때까지 Firestore 리스너로 대기
 function waitForApproval(projId,nm){
   if(!db)return;
-  const unsub=db.collection('join_requests').where('projId','==',projId).where('name','==',nm).onSnapshot(async snap=>{
-    for(const doc of snap.docs){
-      if(doc.data().status==='approved'){
-        unsub();
-        await loadProjects();
-        const proj=S.projects.find(p=>p.id===projId);
-        if(proj){S.cur=projId;location.hash='';afterLogin();setTimeout(()=>openDetail(projId),150);}
-        break;
+  const unsub=db.collection('join_requests')
+    .where('projId','==',projId).where('name','==',nm)
+    .onSnapshot(async snap=>{
+      for(const doc of snap.docs){
+        const data=doc.data();
+        if(data.status==='approved'){
+          unsub();
+          // 최신 프로젝트 데이터 Firestore에서 직접 조회
+          const pSnap=await db.collection('teamo_data').doc(encodeKey('proj:'+projId)).get();
+          if(pSnap.exists){
+            const proj=pSnap.data().value;
+            S.projects=[proj,...S.projects.filter(p=>p.id!==projId)];
+            S.cur=projId;
+            location.hash='';
+            afterLogin();
+            setTimeout(()=>openDetail(projId),200);
+          }
+          break;
+        }
+        if(data.status==='rejected'){
+          unsub();
+          toast('팀장이 요청을 거절했습니다.');
+          setTimeout(()=>showPage('pg-login'),2000);
+          break;
+        }
       }
-    }
-  });
+    });
 }
-// 카카오 로그인 후 자동으로 승인 요청
+// 카카오 로그인 후 자동으로 승인 요청 생성 (바로 입장 절대 안 함)
 async function joinProjectWithCurrentUser(tok){
-  await loadProjects();
-  const proj=S.projects.find(p=>p.inviteToken===tok);
+  const proj=await findProjByToken(tok);
   if(!proj){toast('유효하지 않은 초대 링크');return false;}
+  S._inviteProj=proj;
   const nm=getMyName();
-  if(getMembers(proj).includes(nm)){S.cur=proj.id;return proj.id;}
-  // 승인 요청 생성
-  if(db){
-    try{
-      const ex=await db.collection('join_requests').where('projId','==',proj.id).where('name','==',nm).where('status','==','pending').get();
-      if(ex.empty){
-        await db.collection('join_requests').add({projId:proj.id,projName:proj.name,name:nm,img:S.user.img||'',creatorName:proj.creator||'팀장',status:'pending',createdAt:new Date()});
-        await sendNotif(proj.creator||'팀장',nm,nm+'님이 프로젝트 참가를 요청했습니다. 알림에서 수락/거절하세요.',proj.name);
-      }
-    }catch(e){console.error(e);}
+  // 팀장 본인이면 바로 입장
+  if(proj.creator===nm){
+    S.projects=[proj,...S.projects.filter(p=>p.id!==proj.id)];
+    S.cur=proj.id;location.hash='';return proj.id;
   }
-  // 대기 화면 표시 후 리스너 등록
+  // 이미 승인된 멤버면 바로 입장
+  if((proj.memberList||[]).includes(nm)){
+    S.projects=[proj,...S.projects.filter(p=>p.id!==proj.id)];
+    S.cur=proj.id;location.hash='';return proj.id;
+  }
+  // 그 외: 승인 요청 생성 후 대기
+  await sendJoinRequest();
   showPage('pg-invite');
-  $$('inv-title').textContent=proj.creator?proj.creator+'님이 '+proj.name+'에 초대했습니다!':proj.name;
-  showPendingScreen(nm,proj);
-  waitForApproval(proj.id,nm);
-  return false;
+  $$('inv-title').textContent=proj.creator?proj.creator+'님이 '+proj.name+'에 초대했습니다!':proj.name+'에 초대되었습니다!';
+  $$('inv-pname').textContent=proj.name;
+  $$('inv-pmeta').textContent='팀원 '+proj.members+'명';
+  return false; // 바로 입장 안 함
 }
 
 // ── KAKAO LOGIN ──
@@ -1134,24 +1197,33 @@ function renderNotifPanel(listId){
   }).join('');
   el.innerHTML=html;
 }
-// 수락
+// 수락 - 멤버 추가 + 실시간 동기화
 async function acceptJoinReq(reqId,projId,nm){
   if(!db)return;
   try{
+    // 1. 요청 상태를 approved로
     await db.collection('join_requests').doc(reqId).update({status:'approved'});
-    await loadProjects();
-    const proj=S.projects.find(p=>p.id==projId);
-    if(proj){
-      const ml=[...(proj.memberList||[])];if(!ml.includes(nm))ml.push(nm);
-      await saveProj({...proj,memberList:ml});
-    }
-    await sendNotif(nm,getMyName(),'참가 요청이 수락되었습니다! 프로젝트에 입장하세요.',proj?.name||'');
-    toast('✅ '+nm+'님을 수락했습니다!');
+    // 2. 프로젝트 최신 데이터 Firestore에서 직접 조회
+    const snap=await db.collection('teamo_data').doc(encodeKey('proj:'+projId)).get();
+    if(!snap.exists){toast('프로젝트를 찾을 수 없습니다.');return;}
+    const proj=snap.data().value;
+    // 3. memberList에 추가 (중복 방지)
+    const ml=[...(proj.memberList||[])];
+    if(!ml.includes(nm))ml.push(nm);
+    const updatedProj={...proj,memberList:ml};
+    // 4. Firestore에 저장
+    await dbSet('proj:'+projId,updatedProj);
+    // 5. 로컬 state 업데이트
+    S.projects=S.projects.map(p=>p.id==projId?updatedProj:p);
+    // 6. 팀원에게 수락 알림
+    await sendNotif(nm,getMyName(),'참가 요청이 수락되었습니다! 프로젝트 링크를 다시 열어 입장하세요.',proj.name);
+    toast('✅ '+nm+'님을 수락했습니다! 팀원에게 알림이 전송되었습니다.');
+    // 7. UI 갱신
     await refreshNotifBadge();
     renderNotifPanel('notif-list');renderNotifPanel('notif-list2');
     renderProjects();
     if(S.cur==projId)renderSidebar();
-  }catch(e){toast('수락 실패: '+e.message);}
+  }catch(e){toast('수락 실패: '+e.message);console.error(e);}
 }
 // 거절
 async function rejectJoinReq(reqId,nm,projName){
@@ -1217,22 +1289,27 @@ function startRealtimeListeners(){
       S.joinReqs=snap.docs.map(d=>({id:d.id,...d.data()}));
       const hasUnread=(S.notifs||[]).some(n=>!n.read)||S.joinReqs.length>0;
       ['notif-dot','notif-dot2'].forEach(id=>$$(id)?.classList.toggle('on',hasUnread));
-      if(S.joinReqs.length)toast('👋 새 가입 요청이 있습니다. 알림을 확인하세요!');
+      if(S.joinReqs.length){
+        // 빨간 점 + 토스트
+        const latest=S.joinReqs[0];
+        toast('👋 '+latest.name+'님이 '+latest.projName+' 참가를 요청했습니다!',4000);
+      }
       if($$('notif-panel')?.classList.contains('on'))renderNotifPanel('notif-list');
       if($$('notif-panel2')?.classList.contains('on'))renderNotifPanel('notif-list2');
     });
     _unsubs.push(u2);
   }catch(e){console.error('joinreq listener',e);}
-  // 3. 현재 열린 프로젝트 실시간 동기화
+  // 3. 현재 열린 프로젝트 실시간 동기화 (멤버 변경 포함)
   if(S.cur){
     try{
       const u3=db.collection('teamo_data').doc(encodeKey('proj:'+S.cur)).onSnapshot(snap=>{
         if(!snap.exists)return;
-        const p=snap.data().value;
+        const p=snap.data()?.value;
         if(!p)return;
-        S.projects=S.projects.map(x=>x.id===S.cur?p:x);
+        S.projects=S.projects.map(x=>x.id==S.cur?p:x);
         if($$('pg-detail')?.classList.contains('on')){
           updateProg();renderSidebar();renderNudgeDash();
+          $$('d-meta').textContent='팀원 '+p.members+'명 · 참여 '+(p.memberList?.length||0)+'명'+(p.deadline?' · 마감 '+p.deadline:'');
         }
       });
       _unsubs.push(u3);
