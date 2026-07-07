@@ -1135,23 +1135,25 @@ function renderNudgeDash(){
   }).join('');
 
   // 팀원별 카드 - 항목별 재촉
+  // 투표 존재 여부를 렌더링 시점에 명확히 확인
+  const hasVoteNow=(p.votes||[]).length>0;
   const ITEMS=[
-    {key:'일정',label:'📅 일정',checkFn:(nm,p)=>(p.allSchedSel&&p.allSchedSel[nm]?.length>0)||(p.confirmedDates?.length>0)},
-    {key:'역할',label:'👥 역할',checkFn:(nm,p)=>(p.roleParticipants||[]).includes(nm)},
-    {key:'투표',label:'🗳️ 투표',checkFn:(nm,p)=>(p.voteParticipants||[]).includes(nm),noVoteSkip:(p)=>(p.votes||[]).length===0},
+    {key:'일정',label:'📅 일정',checkFn:(nm)=>(p.allSchedSel&&p.allSchedSel[nm]?.length>0)||(p.confirmedDates?.length>0)},
+    {key:'역할',label:'👥 역할',checkFn:(nm)=>(p.roleParticipants||[]).includes(nm)},
+    {key:'투표',label:'🗳️ 투표',checkFn:(nm)=>(p.voteParticipants||[]).includes(nm),isVote:true},
   ];
   $$('nudge-members').innerHTML=members.map(nm=>{
     const pct=memberPct(nm,p);const pending=getMemberPending(nm,p);const hasPending=pending.length>0;
     const itemsHtml=ITEMS.map(item=>{
       // 투표 없으면 "해당 없음"으로 표시
-      if(item.noVoteSkip&&item.noVoteSkip(p)){
+      if(item.isVote&&!hasVoteNow){
         return '<div class="nm-item" style="background:var(--g50);border-color:var(--g200);">'
           +'<div class="nm-item-label">'+item.label+'</div>'
           +'<div class="nm-item-status" style="color:var(--g400);">투표 없음</div>'
           +'<button class="nm-nudge-btn done-btn" disabled>-</button>'
           +'</div>';
       }
-      const done=item.checkFn(nm,p);
+      const done=item.checkFn(nm);
       return '<div class="nm-item '+(done?'done-item':'pending-item')+'">'
         +'<div class="nm-item-label">'+item.label+'</div>'
         +'<div class="nm-item-status">'+(done?'✓ 완료':'⚠ 미완료')+'</div>'
