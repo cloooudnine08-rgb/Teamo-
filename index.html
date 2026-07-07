@@ -794,7 +794,13 @@ function genTok(){return Math.random().toString(36).slice(2,9)+Math.random().toS
 function cp(){return S.projects.find(p=>p.id===S.cur);}
 async function upd(obj){const p={...cp(),...obj};await saveProj(p);}
 function getMyName(){return S.user?.name||'나';}
-function getMembers(p){return Array.from(new Set([getMyName(),...(p.memberList||[])]));}
+// memberList가 단일 진실의 원천 — creator 항상 포함, getMyName() 제거
+function getMembers(p){
+  const list=[];
+  if(p.creator&&!list.includes(p.creator))list.push(p.creator);
+  (p.memberList||[]).forEach(m=>{if(!list.includes(m))list.push(m);});
+  return list;
+}
 function calcProg(p){
   let s=0;
   if(p.confirmedDates&&p.confirmedDates.length>0)s+=25;
@@ -909,6 +915,8 @@ function waitForApproval(projId,nm){
           const pSnap=await db.collection('teamo_data').doc(encodeKey('proj:'+projId)).get();
           if(pSnap.exists){
             const proj=pSnap.data().value;
+            // Firestore 최신 데이터 그대로 사용 (팀장 포함 전체 memberList)
+            if(!proj.memberList)proj.memberList=[];
             S.projects=[proj,...S.projects.filter(p=>p.id!==projId)];
             S.cur=projId;
             location.hash='';
@@ -1038,8 +1046,12 @@ async function deleteProject(id,name){
 
 async function createProject(){
   const nm=$$('np-nm').value.trim();if(!nm){toast('프로젝트 이름을 입력해주세요');return;}
-  const tok=genTok();const namesRaw=$$('np-names').value.trim();const memberList=namesRaw?namesRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
-  const proj={id:Date.now(),name:nm,members:parseInt($$('np-mb').value)||4,deadline:$$('np-dl').value,createdAt:new Date().toISOString().split('T')[0],inviteToken:tok,creator:getMyName(),roles:[],votes:[],allSchedSel:{},confirmedDates:[],scheduleParticipants:[],roleParticipants:[],voteParticipants:[],nudgeCount:{},memberList};
+  const tok=genTok();const myName=getMyName();
+  const namesRaw=$$('np-names').value.trim();
+  const extraNames=namesRaw?namesRaw.split(',').map(s=>s.trim()).filter(Boolean):[];
+  // 팀장을 memberList 맨 앞에 포함 (단일 진실의 원천)
+  const memberList=Array.from(new Set([myName,...extraNames]));
+  const proj={id:Date.now(),name:nm,members:parseInt($$('np-mb').value)||4,deadline:$$('np-dl').value,createdAt:new Date().toISOString().split('T')[0],inviteToken:tok,creator:myName,roles:[],votes:[],allSchedSel:{},confirmedDates:[],scheduleParticipants:[],roleParticipants:[],voteParticipants:[],nudgeCount:{},memberList};
   S.projects.unshift(proj);await dbSet('proj:'+proj.id,proj);
   $$('m-inv-url').textContent=makeInviteUrl(tok);
   $$('m-form').style.display='none';$$('m-success').style.display='block';
@@ -1230,8 +1242,13 @@ async function acceptJoinReq(reqId,projId,nm){
     const snap=await db.collection('teamo_data').doc(encodeKey('proj:'+projId)).get();
     if(!snap.exists){toast('프로젝트를 찾을 수 없습니다.');return;}
     const proj=snap.data().value;
-    // 3. memberList에 추가 (중복 방지)
-    const ml=[...(proj.memberList||[])];
+    // 3. memberList에 추가 (creator + 기존 멤버 + 새 팀원 모두 포함)
+    const ml=[];
+    // 팀장(creator)을 항상 맨 앞에
+    if(proj.creator&&!ml.includes(proj.creator))ml.push(proj.creator);
+    // 기존 멤버
+    (proj.memberList||[]).forEach(m=>{if(!ml.includes(m))ml.push(m);});
+    // 새 팀원
     if(!ml.includes(nm))ml.push(nm);
     const updatedProj={...proj,memberList:ml};
     // 4. Firestore에 저장
