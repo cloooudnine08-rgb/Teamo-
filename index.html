@@ -805,15 +805,17 @@ function calcProg(p){
   let s=0;
   if(p.confirmedDates&&p.confirmedDates.length>0)s+=25;
   const rl=p.roles||[];if(rl.length)s+=Math.round((rl.filter(r=>r.assigned).length/rl.length)*40);
-  const vl=p.votes||[];if(vl.length){const tot=vl.reduce((a,v)=>a+v.count,0);if(tot>0)s+=15;if((p.voteParticipants?.length||0)>=p.members)s+=20;}
+  const vl=p.votes||[];if(vl.length){const tot=vl.reduce((a,v)=>a+v.count,0);if(tot>0)s+=15;const totalM=Math.max(1,(p.memberList||[]).length||p.members||1);if((p.voteParticipants?.length||0)>=totalM)s+=20;}
   return Math.min(s,100);
 }
 function memberPct(nm,p){
+  const hasVote=(p.votes||[]).length>0;
+  const total=hasVote?3:2; // 투표 없으면 분모 2
   let done=0;
   if((p.confirmedDates?.length>0)||(p.allSchedSel&&p.allSchedSel[nm]?.length>0))done++;
   if((p.roleParticipants||[]).includes(nm))done++;
-  if((p.voteParticipants||[]).includes(nm))done++;
-  return Math.round(done/3*100);
+  if(hasVote&&(p.voteParticipants||[]).includes(nm))done++;
+  return total===0?0:Math.round(done/total*100);
 }
 function getMemberPending(nm,p){
   const tasks=[];
@@ -1106,8 +1108,10 @@ function copySbInvite(){copyUrl('sb-invite-url');}
 function renderNudgeDash(){
   const p=cp();if(!p)return;
   const members=getMembers(p);
+  const memberCount=members.length||p.members||1;
   const unR=(p.roles||[]).filter(r=>!r.assigned).length;
   const vP=p.voteParticipants?.length||0;
+  const hasVote=(p.votes||[]).length>0;
   const pendingCount=members.filter(m=>getMemberPending(m,p).length>0).length;
 
   $$('nudge-panel-desc').textContent=pendingCount>0?'⚠ '+pendingCount+'명이 아직 응답하지 않았습니다. 항목별로 재촉하세요!':'🎉 모든 팀원이 응답 완료했습니다!';
@@ -1116,7 +1120,7 @@ function renderNudgeDash(){
   $$('nudge-stats').innerHTML=[
     {val:pendingCount,lbl:'재촉 필요 팀원',alert:pendingCount>0},
     {val:unR,lbl:'미배정 역할',alert:unR>0},
-    {val:vP+'/'+p.members,lbl:'투표 참여',alert:vP<p.members},
+    {val:hasVote?vP+'/'+memberCount:'없음',lbl:'투표 참여',alert:hasVote&&vP<memberCount},
     {val:calcProg(p)+'%',lbl:'전체 진행률',alert:false},
   ].map(s=>'<div class="nudge-stat '+(s.alert?'alert':'')+'"><div class="sv" style="color:'+(s.alert?'var(--red)':'var(--blue)')+';">'+s.val+'</div><div class="sl">'+s.lbl+'</div></div>').join('');
 
@@ -1124,18 +1128,29 @@ function renderNudgeDash(){
   $$('nudge-progress').innerHTML=[
     {lbl:'📅 일정 조율',pct:Math.round(((p.scheduleParticipants?.length||0)/p.members)*100),done:p.confirmedDates?.length>0},
     {lbl:'👥 역할 배분',pct:p.roles?.length?Math.round((p.roles.filter(r=>r.assigned).length/p.roles.length)*100):0,done:!unR&&(p.roles||[]).length>0},
-    {lbl:'🗳️ 투표 참여',pct:Math.round((vP/p.members)*100),done:vP>=p.members},
-  ].map(item=>'<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>'+item.lbl+'</span><span style="font-weight:600;color:'+(item.done?'var(--green)':'var(--red)')+';">'+item.pct+'%</span></div><div class="prog"><div class="prog-f" style="width:'+item.pct+'%;background:'+(item.done?'var(--green)':'var(--red)')+'"></div></div></div>').join('');
+    {lbl:'🗳️ 투표 참여',pct:hasVote?Math.round((vP/memberCount)*100):null,done:hasVote&&vP>=memberCount,noVote:!hasVote},
+  ].map(item=>{
+    if(item.noVote)return '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>'+item.lbl+'</span><span style="color:var(--g400);">투표 없음</span></div><div class="prog"><div class="prog-f" style="width:0%;background:var(--g300)"></div></div></div>';
+    return '<div style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>'+item.lbl+'</span><span style="font-weight:600;color:'+(item.done?'var(--green)':'var(--red)')+';">'+item.pct+'%</span></div><div class="prog"><div class="prog-f" style="width:'+item.pct+'%;background:'+(item.done?'var(--green)':'var(--red)')+'"></div></div></div>';
+  }).join('');
 
   // 팀원별 카드 - 항목별 재촉
   const ITEMS=[
     {key:'일정',label:'📅 일정',checkFn:(nm,p)=>(p.allSchedSel&&p.allSchedSel[nm]?.length>0)||(p.confirmedDates?.length>0)},
     {key:'역할',label:'👥 역할',checkFn:(nm,p)=>(p.roleParticipants||[]).includes(nm)},
-    {key:'투표',label:'🗳️ 투표',checkFn:(nm,p)=>(p.voteParticipants||[]).includes(nm)||(p.votes||[]).length===0},
+    {key:'투표',label:'🗳️ 투표',checkFn:(nm,p)=>(p.votes||[]).length===0||(p.voteParticipants||[]).includes(nm),noVoteSkip:(p)=>(p.votes||[]).length===0},
   ];
   $$('nudge-members').innerHTML=members.map(nm=>{
     const pct=memberPct(nm,p);const pending=getMemberPending(nm,p);const hasPending=pending.length>0;
     const itemsHtml=ITEMS.map(item=>{
+      // 투표 없으면 "해당 없음"으로 표시
+      if(item.noVoteSkip&&item.noVoteSkip(p)){
+        return '<div class="nm-item" style="background:var(--g50);border-color:var(--g200);">'
+          +'<div class="nm-item-label">'+item.label+'</div>'
+          +'<div class="nm-item-status" style="color:var(--g400);">투표 없음</div>'
+          +'<button class="nm-nudge-btn done-btn" disabled>-</button>'
+          +'</div>';
+      }
       const done=item.checkFn(nm,p);
       return '<div class="nm-item '+(done?'done-item':'pending-item')+'">'
         +'<div class="nm-item-label">'+item.label+'</div>'
@@ -1524,15 +1539,20 @@ function renderVotePage(){
   if(!p.votes||!p.votes.length){$$('vote-setup').style.display='block';$$('vote-live').style.display='none';return;}
   $$('vote-setup').style.display='none';$$('vote-live').style.display='block';
   const total=p.votes.reduce((s,v)=>s+v.count,0)||1;const top=[...p.votes].sort((a,b)=>b.count-a.count)[0];
-  $$('vote-ai-sum').innerHTML='현재 <b>'+(top?.label||'-')+'</b>이 가장 많은 선택 ('+(top?.count||0)+'표).<br>총 '+total+'표 · 미투표자 '+(p.members-(p.voteParticipants?.length||0))+'명';
+  const _totalM=getMembers(p).length||p.members||1;
+  const _notVoted=_totalM-(p.voteParticipants?.length||0);
+  $$('vote-ai-sum').innerHTML='현재 <b>'+(top?.label||'-')+'</b>이 가장 많은 선택 ('+(top?.count||0)+'표).<br>참여 '+(p.voteParticipants?.length||0)+'/'+_totalM+'명 · 미참여 '+_notVoted+'명';
   $$('vote-opts-list').innerHTML=p.votes.map(v=>{
     const pct=Math.round(v.count/total*100);const hasV=v.voters&&v.voters.length>0&&!p.voteAnonymous;
     return '<div style="margin-bottom:7px;"><div class="vote-opt '+(S.voteChecked.includes(v.id)?'ck':'')+'" onclick="toggleVC('+v.id+',this)"><span style="flex:1;font-size:13px;font-weight:500;">'+v.label+'</span><div class="vbar"><div class="vbar-f" style="width:'+pct+'%"></div></div><span style="font-size:11px;color:var(--g500);min-width:26px;text-align:right;">'+v.count+'표</span>'+(hasV?'<button onclick="event.stopPropagation();toggleVoters(this)" style="background:none;border:none;font-size:11px;color:var(--g400);cursor:pointer;">👤</button>':'')+'</div>'+(hasV?'<div class="voter-list"><div style="font-size:11px;color:var(--g400);margin-bottom:4px;">투표한 팀원</div>'+v.voters.map(vt=>'<span class="vtag">'+vt+'</span>').join('')+'</div>':'')+'</div>';
   }).join('');
   const parts=p.voteParticipants||[];
-  $$('vote-part-lbl').textContent=parts.length+'/'+p.members+'명 참여';
-  $$('vote-part-bar').style.width=(parts.length/p.members)*100+'%';
-  $$('vote-parts').innerHTML=parts.map(pt=>'<span class="vtag" style="background:var(--green-l);color:#065F46;">✓ '+pt+'</span>').join('');
+  const totalMembers=getMembers(p).length||p.members||1;
+  const notVoted=totalMembers-parts.length;
+  $$('vote-part-lbl').textContent=parts.length+'/'+totalMembers+'명 참여'+(notVoted>0?' · 미참여 '+notVoted+'명':'');
+  $$('vote-part-bar').style.width=(parts.length/totalMembers)*100+'%';
+  const allDone=parts.length>=totalMembers;
+  $$('vote-parts').innerHTML=(allDone?'<div style="font-size:12px;color:var(--green);font-weight:600;">🎉 모든 팀원 참여 완료!</div>':'')+parts.map(pt=>'<span class="vtag" style="background:var(--green-l);color:#065F46;">✓ '+pt+'</span>').join('');
 }
 function toggleVC(id,el){const i=S.voteChecked.indexOf(id);if(i===-1)S.voteChecked.push(id);else S.voteChecked.splice(i,1);el.classList.toggle('ck',S.voteChecked.includes(id));}
 function toggleVoters(btn){const vl=btn.closest('.vote-opt').parentElement.querySelector('.voter-list');if(vl)vl.classList.toggle('on');}
